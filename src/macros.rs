@@ -4,14 +4,12 @@ macro_rules! parser {
     (
         $name:ident $func_name:ident
         { $( $fields:tt )* }
-        ($keys:ident)
         { $( $init:tt )* }
     ) => {
         parser!(@munch
             { $( $fields )* }
             $name $func_name { }
             newargs()
-            ($keys)
             { $( $init )* }
             defs()
         );
@@ -21,7 +19,6 @@ macro_rules! parser {
         { $field:ident: $ft:ty, $( $left:tt )* }
         $name:ident $func_name:ident { $( $fields:tt )* }
         newargs( $( $args:tt )* )
-        ($keys:ident)
         { $( $init:tt )* }
         defs( $( $defs:tt )* )
     ) => {
@@ -29,7 +26,6 @@ macro_rules! parser {
             { $( $left )* }
             $name $func_name { $( $fields )* pub $field: $ft, }
             newargs( $( $args )* $field: $ft, )
-            ($keys)
             { $( $init )* }
             defs( $( $defs )* $field, )
         );
@@ -39,7 +35,6 @@ macro_rules! parser {
         { => $field:ident: $ft:ty, $( $left:tt )* }
         $name:ident $func_name:ident { $( $fields:tt )* }
         newargs( $( $args:tt )* )
-        ($keys:ident)
         { $( $init:tt )* }
         defs( $( $defs:tt )* )
     ) => {
@@ -47,7 +42,6 @@ macro_rules! parser {
             { $( $left )* }
             $name $func_name { $( $fields )* pub $field: $ft, }
             newargs( $( $args )* )
-            ($keys)
             {
                 let $field: $ft;
                 $( $init )*
@@ -60,7 +54,6 @@ macro_rules! parser {
         { $arg:ident: $at:ty => $field:ident: $ft:ty, $( $left:tt )* }
         $name:ident $func_name:ident { $( $fields:tt )* }
         newargs( $( $args:tt )* )
-        ($keys:ident)
         { $( $init:tt )* }
         defs( $( $defs:tt )* )
     ) => {
@@ -68,7 +61,6 @@ macro_rules! parser {
             { $( $left )* }
             $name $func_name { $( $fields )* pub $field: $ft, }
             newargs( $( $args )* $arg: $at, )
-            ($keys)
             {
                 let $field: $ft;
                 $( $init )*
@@ -81,7 +73,6 @@ macro_rules! parser {
         { $field:ident: $ft:ty = $default:expr, $( $left:tt )* }
         $name:ident $func_name:ident { $( $fields:tt )* }
         newargs( $( $args:tt )* )
-        ($keys:ident)
         { $( $init:tt )* }
         defs( $( $defs:tt )* )
     ) => {
@@ -89,7 +80,6 @@ macro_rules! parser {
             { $( $left )* }
             $name $func_name { $( $fields )* pub $field: $ft, }
             newargs( $( $args )* )
-            ($keys)
             { $( $init )* }
             defs( $( $defs )* $field: $default, )
         );
@@ -99,13 +89,11 @@ macro_rules! parser {
         { }
         $name:ident $func_name:ident { $( $fields:tt )* }
         newargs( $( $arg:ident: $at:ty, )* )
-        ($keys:ident)
         { $( $init:tt )* }
         defs( $( $defs:tt )* )
     ) => {
         #[derive(Debug)]
         pub struct $name {
-            pub keys: Option<Arc<[Box<str>]>>,
             pub stat: Stat,
             pub start_byte: usize,
             pub fresh: bool,
@@ -115,10 +103,8 @@ macro_rules! parser {
 
         impl $name {
             pub fn new( $( $arg: $at, )* ) -> Self {
-                let $keys: Option<Arc<[Box<str>]>>;
                 $( $init )*
                 Self {
-                    keys: $keys,
                     stat: Stat::Running,
                     fresh: true,
                     start_byte: 0,
@@ -128,7 +114,7 @@ macro_rules! parser {
             }
 
             // pub fn new_parser( $( $arg: $at, )* ) -> Parser {
-            //     Parser::new(ParserEnum::$name($name::new($( $arg, )*)))
+            //     Parser::new(Parser::$name($name::new($( $arg, )*)))
             // }
 
             pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
@@ -141,10 +127,10 @@ macro_rules! parser {
                 }
             }
 
-            fn fresh_check(&mut self, byte_index: usize) {
+            fn fresh_check(&mut self, byte_offset: usize) {
                 if self.fresh {
                     self.fresh = false;
-                    self.start_byte = byte_index;
+                    self.start_byte = byte_offset;
                 }
             }
 
@@ -155,7 +141,7 @@ macro_rules! parser {
                 self.fresh = true;
             }
 
-            fn token_count(&self) -> usize {
+            pub fn token_count(&self) -> usize {
                 if let Some(toks) = &self.tokens {
                     toks.len()
                 } else {
@@ -164,9 +150,8 @@ macro_rules! parser {
             }
         }
 
-        #[wasm_bindgen]
         pub fn $func_name($( $arg: $at, )* ) -> Parser {
-            Parser::new(ParserEnum::$name($name::new($( $arg, )*)))
+            Parser::$name($name::new($( $arg, )*))
         }
     };
 }
@@ -176,47 +161,45 @@ macro_rules! parser {
 macro_rules! make_parsers {
     ($($variant:ident),*) => {
         #[derive(Debug, Default, Clone)]
-        enum ParserEnum {
+        pub enum Parser {
             #[default]
             Default,
             $($variant($variant)),*
         }
 
-        #[derive(Debug, Clone)]
-        #[wasm_bindgen]
-        pub struct Parser(ParserEnum);
-
-        #[wasm_bindgen]
         impl Parser {
-            fn new(parser: ParserEnum) -> Self {
-                Parser(parser)
+            fn fresh(&self) -> bool {
+                match self {
+                    Self::Default => false,
+                    $(Self::$variant(p) => p.fresh,)*
+                }
             }
 
-            fn keys(&self) -> Option<Arc<[Box<str>]>> {
-                match &self.0 {
-                    ParserEnum::Default => None,
-                    $(ParserEnum::$variant(p) => p.keys.clone(),)*
+            fn start_byte(&self) -> usize {
+                match self {
+                    Self::Default => 0,
+                    $(Self::$variant(p) => p.start_byte,)*
                 }
             }
 
             fn stat(&self) -> Stat {
-                match &self.0 {
-                    ParserEnum::Default => Stat::Failed,
-                    $(ParserEnum::$variant(p) => p.stat,)*
+                match self {
+                    Self::Default => Stat::Failed,
+                    $(Self::$variant(p) => p.stat,)*
                 }
             }
 
             pub fn string(&self) -> String {
-                match &self.0 {
-                    ParserEnum::Default => "Parser()".to_string(),
-                    $(ParserEnum::$variant(p) => p.string(),)*
+                match self {
+                    Self::Default => "Parser()".to_string(),
+                    $(Self::$variant(p) => p.string(),)*
                 }
             }
 
-            fn parse(&mut self, text: &Text) -> Stat {
-                match &mut self.0 {
-                    ParserEnum::Default => Stat::Failed,
-                    $(ParserEnum::$variant(p) => {
+            pub fn parse(&mut self, text: &Text) -> Stat {
+                match self {
+                    Self::Default => Stat::Failed,
+                    $(Self::$variant(p) => {
                         let mut c: Char = Char::empty();
                         for ch in Text::chars(text) {
                             c = ch.renew();
@@ -233,18 +216,10 @@ macro_rules! make_parsers {
                 }
             }
 
-            pub fn parse_js(&mut self, text: JsText) -> bool {
-                let t = &Text::new(text);
-                match self.parse(t) {
-                    Stat::Matched(_) => true,
-                    _ => false,
-                }
-            }
-
-            fn parse_range(&mut self, text: &Text, from_char: usize, to_char: Option<usize>) -> Stat {
-                match &mut self.0 {
-                    ParserEnum::Default => Stat::Failed,
-                    $(ParserEnum::$variant(p) => {
+            pub fn parse_range(&mut self, text: &Text, from_char: usize, to_char: Option<usize>) -> Stat {
+                match self {
+                    Self::Default => Stat::Failed,
+                    $(Self::$variant(p) => {
                         let mut c: Char = Char::empty();
                         for ch in Text::chars_range(text, from_char, to_char) {
                             c = ch.renew();
@@ -261,53 +236,45 @@ macro_rules! make_parsers {
                 }
             }
 
-            pub fn parse_range_js(&mut self, text: JsText, from_char: usize, to_char: Option<usize>) -> bool {
-                let t = &Text::new(text);
-                match self.parse_range(t, from_char, to_char) {
-                    Stat::Matched(_) => true,
-                    _ => false,
-                }
-            }
-
-            fn take_tokens(&mut self) -> Option<Vec<Token>> {
-                match &mut self.0 {
-                    ParserEnum::Default => None,
-                    $(ParserEnum::$variant(p) => p.tokens.take(),)*
+            pub fn take_tokens(&mut self) -> Option<Vec<Token>> {
+                match self {
+                    Self::Default => None,
+                    $(Self::$variant(p) => p.tokens.take(),)*
                 }
             }
 
             pub fn token_count(&mut self) -> usize {
-                match &mut self.0 {
-                    ParserEnum::Default => 0,
-                    $(ParserEnum::$variant(p) => p.token_count(),)*
+                match self {
+                    Self::Default => 0,
+                    $(Self::$variant(p) => p.token_count(),)*
                 }
             }
 
             fn take_char(&mut self, value: &Char) -> Stat {
-                match &mut self.0 {
-                    ParserEnum::Default => Stat::Failed,
-                    $(ParserEnum::$variant(p) => p.take_char(value),)*
+                match self {
+                    Self::Default => Stat::Failed,
+                    $(Self::$variant(p) => p.take_char(value),)*
                 }
             }
 
             fn finish(&mut self, ch: &Char) -> Stat {
-                match &mut self.0 {
-                    ParserEnum::Default => Stat::Failed,
-                    $(ParserEnum::$variant(p) => p.finish(ch),)*
+                match self {
+                    Self::Default => Stat::Failed,
+                    $(Self::$variant(p) => p.finish(ch),)*
                 }
             }
 
             fn reset(&mut self) {
-                match &mut self.0 {
-                    ParserEnum::Default => {},
-                    $(ParserEnum::$variant(p) => p.reset(),)*
+                match self {
+                    Self::Default => {},
+                    $(Self::$variant(p) => p.reset(),)*
                 }
             }
 
             pub fn tokens_str(&mut self) -> String {
-                match &self.0 {
-                    ParserEnum::Default => "".to_string(),
-                    $(ParserEnum::$variant(p) => format!("{:?}", p.tokens),)*
+                match self {
+                    Self::Default => "".to_string(),
+                    $(Self::$variant(p) => format!("{:?}", p.tokens),)*
                 }
             }
         }

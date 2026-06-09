@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 js-sys = "0.3.99"
 unicode-segmentation = "1.13.3"
 wasm-bindgen = "0.2.122"
+# wasmtime = {version = "45.0.1", default-features = false, features = ["runtime"]}
 
 [profile.release]
 lto = true

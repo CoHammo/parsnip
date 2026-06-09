@@ -1,6 +1,5 @@
 use std::iter::{Skip, Take};
 use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
-use wasm_bindgen::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
@@ -106,30 +105,19 @@ impl<'a> Iterator for ParseChars<'a> {
     }
 }
 
-#[wasm_bindgen]
-pub struct JsText {
+pub struct Text {
     value: String,
 }
-#[wasm_bindgen]
-impl JsText {
-    pub fn new(value: String) -> Self {
-        Self { value }
-    }
-}
-
-pub struct Text {
-    value: JsText,
-}
 impl Text {
-    pub fn new(value: JsText) -> Self {
+    pub fn new(value: String) -> Self {
         Self { value }
     }
 
     pub fn chars(&self) -> ParseChars<'_> {
-        ParseChars::new(&self.value.value)
+        ParseChars::new(&self.value)
     }
 
     pub fn chars_range(&self, from_char: usize, to_char: Option<usize>) -> ParseChars<'_> {
-        ParseChars::range(&self.value.value, from_char, to_char)
+        ParseChars::range(&self.value, from_char, to_char)
     }
 }
