@@ -13,9 +13,10 @@ fn main_test() {
         None,
     );
     let line = tok(till(s("\n"), Some(true)), Some("Line".to_string()), None);
-    let mut parser = rep(alt(vec![heading, line]), None, None);
 
-    let text = Text::new("# Hello\nA Line\n".to_string().repeat(2));
+    let mut parser = tok(rec(s("("), till(s("d"), Some(false)), s(")")), None, None);
+
+    let text = Text::new("( hello (man d) d)".to_string().repeat(1));
 
     let start = Instant::now();
     let res = parser.parse(&text);
