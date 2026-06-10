@@ -12,7 +12,7 @@ impl Clone for Not {
 
 impl CharParser for Not {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        self.fresh_check(ch.byte_offset);
+        freshen!(self, ch);
         match self.inner.take_char(ch) {
             Stat::Running => {}
             Stat::HasMatch(_) | Stat::Matched(_) => self.stat = Stat::Failed,

@@ -9,14 +9,15 @@ fn main_test() {
             tok(run(vec![rep(s("#"), Some(1), Some(6)), s(" ")]), None, None),
             tok(till(s("\n"), Some(true)), None, None),
         ]),
-        Some("Heading".to_string()),
+        None,
         None,
     );
     let line = tok(till(s("\n"), Some(true)), Some("Line".to_string()), None);
 
-    let mut parser = tok(rec(s("("), till(s("d"), Some(false)), s(")")), None, None);
+    // let mut parser = tok(rec(s("("), till(s("d"), Some(false)), s(")")), None, None);
+    let mut parser = rep(heading, None, None);
 
-    let text = Text::new("( hello (man d) d)".to_string().repeat(1));
+    let text = Text::new("# Hello\n".to_string().repeat(1));
 
     let start = Instant::now();
     let res = parser.parse(&text);

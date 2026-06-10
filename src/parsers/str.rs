@@ -23,7 +23,7 @@ impl Clone for Str {
 
 impl CharParser for Str {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        self.fresh_check(ch.byte_offset);
+        freshen!(self, ch);
         if self.len == 0 {
             self.stat = Stat::Failed;
         } else {

@@ -29,6 +29,7 @@ impl Clone for Rec {
 
 impl CharParser for Rec {
     fn take_char(&mut self, ch: &Char) -> Stat {
+        freshen!(self, ch);
         match &mut self.state {
             RecState::Before => match self.bef.take_char(ch) {
                 Stat::Running | Stat::HasMatch(_) => {}

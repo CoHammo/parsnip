@@ -1,10 +1,10 @@
 mod macros;
-mod parsers;
+pub mod parsers;
 mod tests;
-mod types;
+pub mod types;
 
 pub use parsers::*;
-use types::*;
+pub use types::*;
 
 pub trait CharParser: Clone {
     fn take_char(&mut self, ch: &Char) -> Stat;

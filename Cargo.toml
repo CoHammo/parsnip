@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-js-sys = "0.3.99"
+# js-sys = "0.3.99"
 unicode-segmentation = "1.13.3"
 wasm-bindgen = "0.2.122"
 # wasmtime = {version = "45.0.1", default-features = false, features = ["runtime"]}
@@ -16,5 +16,5 @@ wasm-bindgen = "0.2.122"
 lto = true
 codegen-units = 1
 opt-level = 3
-# panic = "abort"
-# strip = true
+panic = "abort"
+strip = true

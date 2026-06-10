@@ -16,7 +16,7 @@ impl Clone for Alt {
 
 impl CharParser for Alt {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        self.fresh_check(ch.byte_offset);
+        freshen!(self, ch);
         for (i, runi) in self.running_inners.clone().iter().enumerate() {
             match self.inners.get_mut(*runi) {
                 Some(parser) => match parser.take_char(ch) {

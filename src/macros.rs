@@ -127,13 +127,6 @@ macro_rules! parser {
                 }
             }
 
-            fn fresh_check(&mut self, byte_offset: usize) {
-                if self.fresh {
-                    self.fresh = false;
-                    self.start_byte = byte_offset;
-                }
-            }
-
             fn reset_base(&mut self) {
                 self.stat = Stat::Running;
                 self.start_byte = 0;
@@ -152,6 +145,16 @@ macro_rules! parser {
 
         pub fn $func_name($( $arg: $at, )* ) -> Parser {
             Parser::$name($name::new($( $arg, )*))
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! freshen {
+    ($self:ident, $ch:ident) => {
+        if $self.fresh {
+            $self.start_byte = $ch.byte_offset;
+            $self.fresh = false;
         }
     };
 }

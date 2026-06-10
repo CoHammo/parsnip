@@ -41,7 +41,7 @@ impl Clone for Rep {
 
 impl CharParser for Rep {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        self.fresh_check(ch.byte_offset);
+        freshen!(self, ch);
         match self.inner.take_char(&ch) {
             Stat::Matched(end_byte) => {
                 self.count += 1;

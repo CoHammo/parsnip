@@ -64,7 +64,7 @@ impl Clone for Run {
 
 impl CharParser for Run {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        self.fresh_check(ch.byte_offset);
+        freshen!(self, ch);
         for index in self.inner_index..self.inner_end_index {
             match self.inners.get_mut(index) {
                 Some(parser) => match parser.0.take_char(ch) {
