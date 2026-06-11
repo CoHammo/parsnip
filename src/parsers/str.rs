@@ -1,23 +1,18 @@
 use super::super::*;
-use unicode_segmentation::UnicodeSegmentation;
+use simd_normalizer::UnicodeNormalization;
 
 parser!(Str s {
-    value: &str => val: String,
-    => chars: Vec<Box<str>>,
+    value: &str => chars: Box<[char]>,
     => len: usize,
     char_index: usize = 0,
 } {
-    val = value.to_string();
-    chars = value
-        .graphemes(true)
-        .map(|c| c.to_string().into_boxed_str())
-        .collect();
+    chars = value.nfc().chars().collect();
     len = chars.len();
 });
 
 impl Clone for Str {
     fn clone(&self) -> Self {
-        Str::new(&self.val)
+        Str::new(&self.chars.iter().collect::<String>())
     }
 }
 
@@ -27,7 +22,7 @@ impl CharParser for Str {
         if self.len == 0 {
             self.stat = Stat::Failed;
         } else {
-            if *ch.value == *self.chars[self.char_index] {
+            if ch.value == self.chars[self.char_index] {
                 self.char_index += 1;
                 if self.char_index == self.len {
                     self.stat = Stat::Matched(ch.next_byte_offset());
@@ -61,6 +56,6 @@ impl CharParser for Str {
     }
 
     fn string(&self) -> String {
-        format!("{}", self.val.escape_default())
+        format!("{}", self.chars.iter().collect::<String>())
     }
 }

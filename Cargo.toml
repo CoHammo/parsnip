@@ -7,9 +7,10 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
+simd-normalizer = "0.1.1"
 # js-sys = "0.3.99"
-unicode-segmentation = "1.13.3"
-wasm-bindgen = "0.2.122"
+# unicode-segmentation = "1.13.3"
+# wasm-bindgen = "0.2.122"
 # wasmtime = {version = "45.0.1", default-features = false, features = ["runtime"]}
 
 [profile.release]

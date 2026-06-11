@@ -1,5 +1,6 @@
 use std::iter::{Skip, Take};
-use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
+// use unicode_segmentation::{GraphemeIndices, UnicodeSegmentation};
+use simd_normalizer::UnicodeNormalization;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
@@ -38,19 +39,19 @@ impl Token {
 #[derive(Debug)]
 pub struct Char<'c> {
     pub full_string: &'c str,
-    pub value: &'c str,
+    pub value: char,
     pub byte_offset: usize,
 }
 impl<'c> Char<'c> {
     pub fn empty() -> Self {
         Self {
             full_string: "",
-            value: "",
+            value: '\0',
             byte_offset: 0,
         }
     }
 
-    pub fn new(full_string: &'c str, value: &'c str, byte_offset: usize) -> Self {
+    pub fn new(full_string: &'c str, value: char, byte_offset: usize) -> Self {
         Self {
             full_string,
             value,
@@ -63,21 +64,23 @@ impl<'c> Char<'c> {
     }
 
     pub fn next_byte_offset(&self) -> usize {
-        self.byte_offset + self.value.len()
+        self.byte_offset + self.value.len_utf8()
     }
 }
 
 pub struct ParseChars<'a> {
     value: &'a str,
     char_index: usize,
-    graphemes: Take<Skip<GraphemeIndices<'a>>>,
+    chars: Take<Skip<std::str::CharIndices<'a>>>,
+    // graphemes: Take<Skip<GraphemeIndices<'a>>>,
 }
 impl<'a> ParseChars<'a> {
     pub fn new(value: &'a str) -> Self {
         Self {
             value,
             char_index: 0,
-            graphemes: value.grapheme_indices(true).skip(0).take(value.len()),
+            chars: value.char_indices().skip(0).take(value.len()),
+            // graphemes: value.grapheme_indices(true).skip(0).take(value.len()),
         }
     }
 
@@ -85,17 +88,21 @@ impl<'a> ParseChars<'a> {
         Self {
             value,
             char_index: from_char,
-            graphemes: value
-                .grapheme_indices(true)
+            chars: value
+                .char_indices()
                 .skip(from_char)
                 .take(to_char.unwrap_or(value.len())),
+            // graphemes: value
+            //     .grapheme_indices(true)
+            //     .skip(from_char)
+            //     .take(to_char.unwrap_or(value.len())),
         }
     }
 }
 impl<'a> Iterator for ParseChars<'a> {
     type Item = Char<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some((byte_offset, ch)) = self.graphemes.next() {
+        if let Some((byte_offset, ch)) = self.chars.next() {
             let ch = Some(Char::new(self.value, ch, byte_offset));
             self.char_index += 1;
             ch
@@ -109,7 +116,8 @@ pub struct Text {
     value: String,
 }
 impl Text {
-    pub fn new(value: String) -> Self {
+    pub fn new(mut value: String) -> Self {
+        value = value.nfc().into();
         Self { value }
     }
 
