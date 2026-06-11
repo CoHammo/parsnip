@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use super::super::*;
 
 parser!(Alt alt {
     parsers: Vec<Parser> => inners: Box<[Parser]>,
-    => running_inners: Vec<usize>,
+    => running_inners: HashSet<usize>,
 } {
     running_inners = (0..parsers.len()).collect();
     inners = parsers.into_boxed_slice();
@@ -17,8 +19,8 @@ impl Clone for Alt {
 impl CharParser for Alt {
     fn take_char(&mut self, ch: &Char) -> Stat {
         freshen!(self, ch);
-        for (i, runi) in self.running_inners.clone().iter().enumerate() {
-            match self.inners.get_mut(*runi) {
+        for index in self.running_inners.clone() {
+            match self.inners.get_mut(index) {
                 Some(parser) => match parser.take_char(ch) {
                     Stat::Running => {}
                     Stat::HasMatch(end_byte) => {
@@ -31,7 +33,11 @@ impl CharParser for Alt {
                         break;
                     }
                     Stat::Failed => {
-                        self.running_inners.remove(i);
+                        self.running_inners.take(&index);
+                        if self.running_inners.is_empty() {
+                            self.stat = Stat::Failed;
+                            break;
+                        }
                     }
                 },
                 None => self.stat = Stat::Failed,
