@@ -199,12 +199,12 @@ macro_rules! make_parsers {
                 }
             }
 
-            pub fn parse(&mut self, text: &Text) -> Stat {
+            pub fn parse(&mut self, text: &Text, from_char: Option<usize>, to_char: Option<usize>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
                         let mut last_char = Char::empty();
-                        for ch in text.chars() {
+                        for ch in text.chars(from_char, to_char) {
                             last_char = ch.owned();
                             match p.take_char(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
@@ -214,26 +214,6 @@ macro_rules! make_parsers {
                         return match p.stat {
                             Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
                             _ => p.stat,
-                        }
-                    },)*
-                }
-            }
-
-            pub fn parse_range(&mut self, text: &Text, from_char: usize, to_char: Option<usize>) -> Stat {
-                match self {
-                    Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => {
-                        let mut last_char = Char::empty();
-                        for ch in text.chars_range(from_char, to_char) {
-                            last_char = ch.owned();
-                            match p.take_char(&ch) {
-                                Stat::Matched(_) | Stat::Failed => break,
-                                _ => {}
-                            }
-                        }
-                        return match p.stat {
-                            Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
-                            _ => p.stat
                         }
                     },)*
                 }

@@ -76,21 +76,13 @@ pub struct ParseChars<'a> {
     chars: Take<Skip<CharIndices<'a>>>,
 }
 impl<'a> ParseChars<'a> {
-    pub fn new(value: &'a str) -> Self {
+    pub fn new(value: &'a str, from: Option<usize>, to: Option<usize>) -> Self {
         Self {
             value,
             char_index: 0,
-            chars: value.char_indices().skip(0).take(value.len()),
-        }
-    }
-
-    pub fn range(value: &'a str, from: usize, to: Option<usize>) -> Self {
-        Self {
-            value,
-            char_index: from,
             chars: value
                 .char_indices()
-                .skip(from)
+                .skip(from.unwrap_or(0))
                 .take(to.unwrap_or(value.len())),
         }
     }
@@ -120,11 +112,7 @@ impl Text {
         }
     }
 
-    pub fn chars(&self) -> ParseChars<'_> {
-        ParseChars::new(&self.value)
-    }
-
-    pub fn chars_range(&self, from_char: usize, to_char: Option<usize>) -> ParseChars<'_> {
-        ParseChars::range(&self.value, from_char, to_char)
+    pub fn chars(&self, from_char: Option<usize>, to_char: Option<usize>) -> ParseChars<'_> {
+        ParseChars::new(&self.value, from_char, to_char)
     }
 }
