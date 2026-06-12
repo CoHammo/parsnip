@@ -94,10 +94,7 @@ macro_rules! parser {
     ) => {
         #[derive(Debug)]
         pub struct $name {
-            pub stat: Stat,
-            pub start_byte: usize,
-            pub fresh: bool,
-            pub tokens: Option<Vec<Token>>,
+            pub base: BaseParser,
             $( $fields )*
         }
 
@@ -105,40 +102,8 @@ macro_rules! parser {
             pub fn new( $( $arg: $at, )* ) -> Self {
                 $( $init )*
                 Self {
-                    stat: Stat::Running,
-                    fresh: true,
-                    start_byte: 0,
-                    tokens: None,
+                    base: BaseParser::new(),
                     $( $defs )*
-                }
-            }
-
-            // pub fn new_parser( $( $arg: $at, )* ) -> Parser {
-            //     Parser::new(Parser::$name($name::new($( $arg, )*)))
-            // }
-
-            pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
-                if let Some(extra_tokens) = tokens {
-                    if let Some(toks) = &mut self.tokens {
-                        toks.extend(extra_tokens);
-                    } else {
-                        self.tokens = Some(extra_tokens);
-                    }
-                }
-            }
-
-            fn reset_base(&mut self) {
-                self.stat = Stat::Running;
-                self.start_byte = 0;
-                self.tokens = None;
-                self.fresh = true;
-            }
-
-            pub fn token_count(&self) -> usize {
-                if let Some(toks) = &self.tokens {
-                    toks.len()
-                } else {
-                    0
                 }
             }
         }
@@ -152,9 +117,9 @@ macro_rules! parser {
 #[macro_export]
 macro_rules! freshen {
     ($self:ident, $ch:ident) => {
-        if $self.fresh {
-            $self.start_byte = $ch.byte;
-            $self.fresh = false;
+        if $self.base.fresh {
+            $self.base.start_byte = $ch.byte;
+            $self.base.fresh = false;
         }
     };
 }
@@ -174,21 +139,21 @@ macro_rules! make_parsers {
             fn fresh(&self) -> bool {
                 match self {
                     Self::Default => false,
-                    $(Self::$variant(p) => p.fresh,)*
+                    $(Self::$variant(p) => p.base.fresh,)*
                 }
             }
 
             fn start_byte(&self) -> usize {
                 match self {
                     Self::Default => 0,
-                    $(Self::$variant(p) => p.start_byte,)*
+                    $(Self::$variant(p) => p.base.start_byte,)*
                 }
             }
 
             fn stat(&self) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => p.stat,)*
+                    $(Self::$variant(p) => p.base.stat,)*
                 }
             }
 
@@ -211,9 +176,9 @@ macro_rules! make_parsers {
                                 _ => {},
                             }
                         }
-                        return match p.stat {
+                        return match p.base.stat {
                             Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
-                            _ => p.stat,
+                            _ => p.base.stat,
                         }
                     },)*
                 }
@@ -222,14 +187,7 @@ macro_rules! make_parsers {
             pub fn take_tokens(&mut self) -> Option<Vec<Token>> {
                 match self {
                     Self::Default => None,
-                    $(Self::$variant(p) => p.tokens.take(),)*
-                }
-            }
-
-            pub fn token_count(&mut self) -> usize {
-                match self {
-                    Self::Default => 0,
-                    $(Self::$variant(p) => p.token_count(),)*
+                    $(Self::$variant(p) => p.base.tokens.take(),)*
                 }
             }
 
@@ -257,7 +215,7 @@ macro_rules! make_parsers {
             pub fn tokens_str(&mut self) -> String {
                 match self {
                     Self::Default => "".to_string(),
-                    $(Self::$variant(p) => format!("{:?}", p.tokens),)*
+                    $(Self::$variant(p) => format!("{:#?}", p.base.tokens),)*
                 }
             }
         }

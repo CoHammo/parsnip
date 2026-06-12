@@ -1,5 +1,6 @@
 use icu_normalizer::ComposingNormalizer;
 use std::{
+    collections::HashMap,
     iter::{Skip, Take},
     str::CharIndices,
 };
@@ -13,24 +14,96 @@ pub enum Stat {
 }
 
 #[derive(Debug)]
+pub struct BaseParser {
+    pub stat: Stat,
+    pub start_byte: usize,
+    pub fresh: bool,
+    pub tokens: Option<Vec<Token>>,
+}
+impl BaseParser {
+    pub fn new() -> Self {
+        Self {
+            stat: Stat::Running,
+            start_byte: 0,
+            fresh: true,
+            tokens: None,
+        }
+    }
+
+    pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
+        if let Some(new_tokens) = tokens {
+            if let Some(toks) = &mut self.tokens {
+                toks.extend(new_tokens);
+            } else {
+                self.tokens = Some(new_tokens);
+            }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.stat = Stat::Running;
+        self.start_byte = 0;
+        self.fresh = true;
+        self.tokens = None;
+    }
+}
+
+pub struct Tagger {
+    count: u32,
+    to_tag: HashMap<Tag, String>,
+    to_id: HashMap<String, Tag>,
+}
+impl Tagger {
+    pub fn new() -> Self {
+        let mut to_tag = HashMap::new();
+        to_tag.insert(Tag(0), "".to_string());
+        let mut to_id = HashMap::new();
+        to_id.insert("".to_string(), Tag(0));
+        Self {
+            count: 1,
+            to_tag,
+            to_id,
+        }
+    }
+
+    pub fn none(&self) -> Tag {
+        Tag(0)
+    }
+
+    pub fn add(&mut self, name: &str) {
+        self.to_tag.insert(Tag(self.count), name.to_string());
+        self.to_id.insert(name.to_string(), Tag(self.count));
+        self.count += 1;
+    }
+
+    pub fn at(&mut self, name: &str) -> Tag {
+        if let Some(tag) = self.to_id.get(name) {
+            *tag
+        } else {
+            self.add(name);
+            self.at(name)
+        }
+    }
+
+    pub fn get(&self, tag: Tag) -> &str {
+        self.to_tag.get(&tag).unwrap()
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct Tag(u32);
+
+#[derive(Debug)]
 pub struct Token {
-    pub kind: Option<String>,
-    pub value: Option<String>,
+    pub tag: Tag,
     pub start_byte: usize,
     pub end_byte: usize,
     pub tokens: Option<Vec<Token>>,
 }
 impl Token {
-    pub fn new(
-        kind: Option<String>,
-        value: Option<&str>,
-        start_byte: usize,
-        end_byte: usize,
-        tokens: Option<Vec<Token>>,
-    ) -> Self {
+    pub fn new(tag: Tag, start_byte: usize, end_byte: usize, tokens: Option<Vec<Token>>) -> Self {
         return Self {
-            kind,
-            value: value.map(|v| v.to_string()),
+            tag,
             start_byte,
             end_byte,
             tokens,

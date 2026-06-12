@@ -20,15 +20,15 @@ impl CharParser for Str {
     fn take_char(&mut self, ch: &Char) -> Stat {
         freshen!(self, ch);
         if self.len == 0 {
-            self.stat = Stat::Failed;
+            self.base.stat = Stat::Failed;
         } else {
             if ch.value == self.chars[self.char_index] {
                 self.char_index += 1;
                 if self.char_index == self.len {
-                    self.stat = Stat::Matched(ch.next_byte());
+                    self.base.stat = Stat::Matched(ch.next_byte());
                 }
             } else {
-                self.stat = Stat::Failed;
+                self.base.stat = Stat::Failed;
             }
         }
         // println!(
@@ -38,20 +38,20 @@ impl CharParser for Str {
         //     ch.byte_offset,
         //     self.stat
         // );
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
         if self.len == 0 {
-            self.stat = Stat::Matched(ch.next_byte());
+            self.base.stat = Stat::Matched(ch.next_byte());
         } else {
-            self.stat = Stat::Failed;
+            self.base.stat = Stat::Failed;
         };
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         self.char_index = 0;
     }
 

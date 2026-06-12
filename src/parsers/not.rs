@@ -15,22 +15,22 @@ impl CharParser for Not {
         freshen!(self, ch);
         match self.inner.take_char(ch) {
             Stat::Running => {}
-            Stat::HasMatch(_) | Stat::Matched(_) => self.stat = Stat::Failed,
-            Stat::Failed => self.stat = Stat::Matched(ch.next_byte()),
+            Stat::HasMatch(_) | Stat::Matched(_) => self.base.stat = Stat::Failed,
+            Stat::Failed => self.base.stat = Stat::Matched(ch.next_byte()),
         }
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
-            Stat::HasMatch(_) | Stat::Matched(_) => self.stat = Stat::Failed,
-            _ => self.stat = Stat::Matched(ch.next_byte()),
+            Stat::HasMatch(_) | Stat::Matched(_) => self.base.stat = Stat::Failed,
+            _ => self.base.stat = Stat::Matched(ch.next_byte()),
         }
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         self.inner.reset();
     }
 

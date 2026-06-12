@@ -29,7 +29,7 @@ impl Run {
                     }
                 }
                 Stat::Failed => {
-                    self.stat = Stat::Failed;
+                    self.base.stat = Stat::Failed;
                     go = false;
                 }
             }
@@ -54,6 +54,12 @@ impl Run {
             self.inner_end_index += 1;
         }
     }
+
+    fn collect_tokens(&mut self) {
+        for parser in self.inners.iter_mut() {
+            self.base.add_tokens(parser.0.take_tokens());
+        }
+    }
 }
 
 impl Clone for Run {
@@ -73,7 +79,7 @@ impl CharParser for Run {
                         parser.1 = Some(end_byte);
                         self.set_end(index);
                         if index == self.len - 1 {
-                            self.stat = Stat::HasMatch(end_byte);
+                            self.base.stat = Stat::HasMatch(end_byte);
                         }
                         break;
                     }
@@ -85,10 +91,9 @@ impl CharParser for Run {
                             }
                         }
                         if index == self.inner_index {
-                            let toks = parser.0.take_tokens();
-                            self.add_tokens(toks);
                             if !self.next_inner() {
-                                self.stat = Stat::Matched(end_byte);
+                                self.collect_tokens();
+                                self.base.stat = Stat::Matched(end_byte);
                             }
                         } else if index == self.inner_end_index - 1 {
                             self.next_end();
@@ -99,14 +104,14 @@ impl CharParser for Run {
                     }
                     Stat::Failed => {
                         if index == self.inner_index {
-                            self.stat = Stat::Failed;
+                            self.base.stat = Stat::Failed;
                         }
                     }
                 },
-                None => self.stat = Stat::Failed,
+                None => self.base.stat = Stat::Failed,
             }
         }
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
@@ -115,18 +120,18 @@ impl CharParser for Run {
                 match p.0.finish(ch) {
                     Stat::Matched(end_byte) => {
                         let toks = p.0.take_tokens();
-                        self.add_tokens(toks);
-                        self.stat = Stat::Matched(end_byte)
+                        self.base.add_tokens(toks);
+                        self.base.stat = Stat::Matched(end_byte)
                     }
-                    _ => self.stat = Stat::Failed,
+                    _ => self.base.stat = Stat::Failed,
                 }
             }
         }
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         for p in &mut self.inners[..self.inner_end_index] {
             p.0.reset();
             p.1 = None;

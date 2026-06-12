@@ -46,33 +46,32 @@ impl CharParser for Rep {
             Stat::Matched(end_byte) => {
                 self.count += 1;
                 self.end_byte = end_byte;
-                let toks = self.inner.take_tokens();
-                self.add_tokens(toks);
+                self.base.add_tokens(self.inner.take_tokens());
                 self.inner.reset();
                 if self.count == self.the_max {
-                    self.stat = Stat::Matched(end_byte);
+                    self.base.stat = Stat::Matched(end_byte);
                 } else if self.count >= self.the_min {
-                    self.stat = Stat::HasMatch(end_byte);
+                    self.base.stat = Stat::HasMatch(end_byte);
                 }
             }
             Stat::Failed => {
                 if self.count >= self.the_min {
-                    self.stat = Stat::Matched(self.end_byte);
+                    self.base.stat = Stat::Matched(self.end_byte);
                 } else {
-                    self.stat = Stat::Failed;
+                    self.base.stat = Stat::Failed;
                 }
             }
-            stat => self.stat = stat,
+            stat => self.base.stat = stat,
         }
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
         if self.inner.fresh() {
-            if let Stat::HasMatch(end_byte) = self.stat {
-                self.stat = Stat::Matched(end_byte);
+            if let Stat::HasMatch(end_byte) = self.base.stat {
+                self.base.stat = Stat::Matched(end_byte);
             } else {
-                self.stat = Stat::Failed;
+                self.base.stat = Stat::Failed;
             }
         } else {
             match self.inner.finish(ch) {
@@ -83,19 +82,18 @@ impl CharParser for Rep {
                 _ => {}
             }
             if self.count >= self.the_min {
-                let toks = self.inner.take_tokens();
-                self.add_tokens(toks);
+                self.base.add_tokens(self.inner.take_tokens());
                 self.inner.reset();
-                self.stat = Stat::Matched(self.end_byte);
+                self.base.stat = Stat::Matched(self.end_byte);
             } else {
-                self.stat = Stat::Failed;
+                self.base.stat = Stat::Failed;
             };
         }
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         self.inner.reset();
         self.count = 0;
         self.end_byte = 0;

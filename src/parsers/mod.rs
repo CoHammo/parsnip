@@ -9,7 +9,7 @@ mod tok;
 
 pub use alt::*;
 pub use not::*;
-pub use rec::*;
+// pub use rec::*;
 pub use rep::*;
 pub use run::*;
 pub use str::*;
@@ -18,4 +18,4 @@ pub use tok::*;
 
 use super::*;
 
-make_parsers!(Str, Tok, Not, Run, Rep, Till, Alt, Rec);
+make_parsers!(Str, Tok, Not, Run, Rep, Till, Alt);

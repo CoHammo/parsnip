@@ -24,26 +24,25 @@ impl CharParser for Alt {
                 Some(parser) => match parser.take_char(ch) {
                     Stat::Running => {}
                     Stat::HasMatch(end_byte) => {
-                        self.stat = Stat::HasMatch(end_byte);
+                        self.base.stat = Stat::HasMatch(end_byte);
                     }
                     Stat::Matched(end_byte) => {
-                        let toks = parser.take_tokens();
-                        self.add_tokens(toks);
-                        self.stat = Stat::Matched(end_byte);
+                        self.base.add_tokens(parser.take_tokens());
+                        self.base.stat = Stat::Matched(end_byte);
                         break;
                     }
                     Stat::Failed => {
                         self.running_inners.take(&index);
                         if self.running_inners.is_empty() {
-                            self.stat = Stat::Failed;
+                            self.base.stat = Stat::Failed;
                             break;
                         }
                     }
                 },
-                None => self.stat = Stat::Failed,
+                None => self.base.stat = Stat::Failed,
             }
         }
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
@@ -51,21 +50,20 @@ impl CharParser for Alt {
             match self.inners.get_mut(*runi) {
                 Some(parser) => match parser.finish(ch) {
                     Stat::Matched(end_byte) => {
-                        let toks = parser.take_tokens();
-                        self.add_tokens(toks);
-                        self.stat = Stat::Matched(end_byte);
+                        self.base.add_tokens(parser.take_tokens());
+                        self.base.stat = Stat::Matched(end_byte);
                         break;
                     }
-                    _ => self.stat = Stat::Failed,
+                    _ => self.base.stat = Stat::Failed,
                 },
-                None => self.stat = Stat::Failed,
+                None => self.base.stat = Stat::Failed,
             }
         }
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         self.running_inners = (0..self.inners.len()).collect();
         for parser in self.inners.iter_mut() {
             parser.reset();

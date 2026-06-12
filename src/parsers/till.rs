@@ -19,36 +19,36 @@ impl CharParser for Till {
         freshen!(self, ch);
         match self.inner.take_char(ch) {
             Stat::Matched(end_byte) => {
-                let toks = self.inner.take_tokens();
-                self.add_tokens(toks);
-                self.stat = Stat::Matched(end_byte)
+                self.base.add_tokens(self.inner.take_tokens());
+                self.base.stat = Stat::Matched(end_byte)
             }
             Stat::Failed => {
                 self.inner.reset();
             }
-            stat => self.stat = stat,
+            stat => self.base.stat = stat,
         }
-        self.stat
+        self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
             Stat::Matched(end_byte) => {
-                self.stat = Stat::Matched(end_byte);
+                self.base.add_tokens(self.inner.take_tokens());
+                self.base.stat = Stat::Matched(end_byte);
             }
             _ => {
                 if self.match_finish {
-                    self.stat = Stat::Matched(ch.next_byte())
+                    self.base.stat = Stat::Matched(ch.next_byte())
                 } else {
-                    self.stat = Stat::Failed;
+                    self.base.stat = Stat::Failed;
                 }
             }
         }
-        self.stat
+        self.base.stat
     }
 
     fn reset(&mut self) {
-        self.reset_base();
+        self.base.reset();
         self.inner.reset();
     }
 
