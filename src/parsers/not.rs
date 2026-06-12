@@ -16,7 +16,7 @@ impl CharParser for Not {
         match self.inner.take_char(ch) {
             Stat::Running => {}
             Stat::HasMatch(_) | Stat::Matched(_) => self.stat = Stat::Failed,
-            Stat::Failed => self.stat = Stat::Matched(ch.next_byte_offset()),
+            Stat::Failed => self.stat = Stat::Matched(ch.next_byte()),
         }
         self.stat
     }
@@ -24,7 +24,7 @@ impl CharParser for Not {
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
             Stat::HasMatch(_) | Stat::Matched(_) => self.stat = Stat::Failed,
-            _ => self.stat = Stat::Matched(ch.next_byte_offset()),
+            _ => self.stat = Stat::Matched(ch.next_byte()),
         }
         self.stat
     }

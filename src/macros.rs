@@ -153,7 +153,7 @@ macro_rules! parser {
 macro_rules! freshen {
     ($self:ident, $ch:ident) => {
         if $self.fresh {
-            $self.start_byte = $ch.byte_offset;
+            $self.start_byte = $ch.byte;
             $self.fresh = false;
         }
     };
@@ -203,16 +203,16 @@ macro_rules! make_parsers {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
-                        let mut c: Char = Char::empty();
-                        for ch in Text::chars(text) {
-                            c = ch.renew();
+                        let mut last_char = Char::empty();
+                        for ch in text.chars() {
+                            last_char = ch.owned();
                             match p.take_char(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.stat {
-                            Stat::Running | Stat::HasMatch(_) => p.finish(&c),
+                            Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
                             _ => p.stat,
                         }
                     },)*
@@ -223,16 +223,16 @@ macro_rules! make_parsers {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
-                        let mut c: Char = Char::empty();
-                        for ch in Text::chars_range(text, from_char, to_char) {
-                            c = ch.renew();
+                        let mut last_char = Char::empty();
+                        for ch in text.chars_range(from_char, to_char) {
+                            last_char = ch.owned();
                             match p.take_char(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {}
                             }
                         }
                         return match p.stat {
-                            Stat::Running | Stat::HasMatch(_) => p.finish(&c),
+                            Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
                             _ => p.stat
                         }
                     },)*

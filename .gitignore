@@ -1,3 +1,4 @@
 /target
 ts_tests
 pkg
+testing.rs

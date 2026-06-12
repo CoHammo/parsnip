@@ -38,7 +38,7 @@ impl CharParser for Till {
             }
             _ => {
                 if self.match_finish {
-                    self.stat = Stat::Matched(ch.next_byte_offset())
+                    self.stat = Stat::Matched(ch.next_byte())
                 } else {
                     self.stat = Stat::Failed;
                 }

@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-simd-normalizer = "0.1.1"
+icu_normalizer = "2.2.0"
 # js-sys = "0.3.99"
 # unicode-segmentation = "1.13.3"
 # wasm-bindgen = "0.2.122"

@@ -33,7 +33,7 @@ impl CharParser for Tok {
     fn take_char(&mut self, ch: &Char) -> Stat {
         match self.inner.take_char(ch) {
             Stat::Matched(end_byte) => {
-                self.tokenize(ch.full_string, self.inner.start_byte(), end_byte);
+                self.tokenize(ch.source, self.inner.start_byte(), end_byte);
                 self.stat = Stat::Matched(end_byte);
             }
             stat => self.stat = stat,
@@ -45,7 +45,7 @@ impl CharParser for Tok {
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
             Stat::Matched(end_byte) => {
-                self.tokenize(ch.full_string, self.inner.start_byte(), end_byte);
+                self.tokenize(ch.source, self.inner.start_byte(), end_byte);
                 self.stat = Stat::Matched(end_byte);
             }
             stat => self.stat = stat,

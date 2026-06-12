@@ -1,12 +1,12 @@
 use super::super::*;
-use simd_normalizer::UnicodeNormalization;
+use icu_normalizer::ComposingNormalizer;
 
 parser!(Str s {
     value: &str => chars: Box<[char]>,
     => len: usize,
     char_index: usize = 0,
 } {
-    chars = value.nfc().chars().collect();
+    chars = ComposingNormalizer::new_nfc().normalize(&value).chars().collect();
     len = chars.len();
 });
 
@@ -25,7 +25,7 @@ impl CharParser for Str {
             if ch.value == self.chars[self.char_index] {
                 self.char_index += 1;
                 if self.char_index == self.len {
-                    self.stat = Stat::Matched(ch.next_byte_offset());
+                    self.stat = Stat::Matched(ch.next_byte());
                 }
             } else {
                 self.stat = Stat::Failed;
@@ -43,7 +43,7 @@ impl CharParser for Str {
 
     fn finish(&mut self, ch: &Char) -> Stat {
         if self.len == 0 {
-            self.stat = Stat::Matched(ch.next_byte_offset());
+            self.stat = Stat::Matched(ch.next_byte());
         } else {
             self.stat = Stat::Failed;
         };
