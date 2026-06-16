@@ -116,9 +116,10 @@ macro_rules! parser {
 
 #[macro_export]
 macro_rules! freshen {
-    ($self:ident, $ch:ident) => {
+    ($self:ident, $ch:ident $(, $more:expr )?) => {
         if $self.base.fresh {
             $self.base.start_byte = $ch.byte;
+            $( $more )?
             $self.base.fresh = false;
         }
     };
@@ -126,9 +127,9 @@ macro_rules! freshen {
 
 /// Macro for implementing the parser methods for a given set of parser variants.
 #[macro_export]
-macro_rules! make_parsers {
+macro_rules! parser_enum {
     ($($variant:ident),*) => {
-        #[derive(Debug, Default, Clone)]
+        #[derive(Debug, Default)]
         pub enum Parser {
             #[default]
             Default,
@@ -170,14 +171,14 @@ macro_rules! make_parsers {
                     $(Self::$variant(p) => {
                         let mut last_char = Char::empty();
                         for ch in text.chars(from_char, to_char) {
-                            last_char = ch.owned();
+                            last_char = ch.clone();
                             match p.take_char(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.base.stat {
-                            Stat::Running | Stat::HasMatch(_) => p.finish(&last_char),
+                            Stat::Running | Stat::PossibleMatch(_) => p.finish(&last_char),
                             _ => p.base.stat,
                         }
                     },)*
@@ -216,6 +217,15 @@ macro_rules! make_parsers {
                 match self {
                     Self::Default => "".to_string(),
                     $(Self::$variant(p) => format!("{:#?}", p.base.tokens),)*
+                }
+            }
+        }
+
+        impl Clone for Parser {
+            fn clone(&self) -> Self {
+                match self {
+                    Self::Default => Self::Default,
+                    $(Self::$variant(p) => Self::$variant(p.clone()),)*
                 }
             }
         }

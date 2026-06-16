@@ -8,61 +8,26 @@ use std::{
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
     Running,
-    HasMatch(usize),
+    PossibleMatch(usize),
     Matched(usize),
     Failed,
 }
 
-#[derive(Debug)]
-pub struct BaseParser {
-    pub stat: Stat,
-    pub start_byte: usize,
-    pub fresh: bool,
-    pub tokens: Option<Vec<Token>>,
-}
-impl BaseParser {
-    pub fn new() -> Self {
-        Self {
-            stat: Stat::Running,
-            start_byte: 0,
-            fresh: true,
-            tokens: None,
-        }
-    }
-
-    pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
-        if let Some(new_tokens) = tokens {
-            if let Some(toks) = &mut self.tokens {
-                toks.extend(new_tokens);
-            } else {
-                self.tokens = Some(new_tokens);
-            }
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.stat = Stat::Running;
-        self.start_byte = 0;
-        self.fresh = true;
-        self.tokens = None;
-    }
-}
-
-pub struct Tagger {
+pub struct Tags {
     count: u32,
-    to_tag: HashMap<Tag, String>,
-    to_id: HashMap<String, Tag>,
+    names: HashMap<Tag, String>,
+    ids: HashMap<String, Tag>,
 }
-impl Tagger {
+impl Tags {
     pub fn new() -> Self {
-        let mut to_tag = HashMap::new();
-        to_tag.insert(Tag(0), "".to_string());
-        let mut to_id = HashMap::new();
-        to_id.insert("".to_string(), Tag(0));
+        let mut names = HashMap::new();
+        names.insert(Tag(0), "Text".into());
+        let mut ids = HashMap::new();
+        ids.insert("Text".into(), Tag(0));
         Self {
             count: 1,
-            to_tag,
-            to_id,
+            names,
+            ids,
         }
     }
 
@@ -71,22 +36,26 @@ impl Tagger {
     }
 
     pub fn add(&mut self, name: &str) {
-        self.to_tag.insert(Tag(self.count), name.to_string());
-        self.to_id.insert(name.to_string(), Tag(self.count));
+        self.names.insert(Tag(self.count), name.into());
+        self.ids.insert(name.into(), Tag(self.count));
         self.count += 1;
     }
 
-    pub fn at(&mut self, name: &str) -> Tag {
-        if let Some(tag) = self.to_id.get(name) {
+    pub fn tag(&mut self, name: &str) -> Tag {
+        if let Some(tag) = self.ids.get(name) {
             *tag
         } else {
             self.add(name);
-            self.at(name)
+            self.tag(name)
         }
     }
 
     pub fn get(&self, tag: Tag) -> &str {
-        self.to_tag.get(&tag).unwrap()
+        if let Some(name) = self.names.get(&tag) {
+            name
+        } else {
+            ""
+        }
     }
 }
 
@@ -96,14 +65,22 @@ pub struct Tag(u32);
 #[derive(Debug)]
 pub struct Token {
     pub tag: Tag,
+    // pub value: Option<String>,
     pub start_byte: usize,
     pub end_byte: usize,
     pub tokens: Option<Vec<Token>>,
 }
 impl Token {
-    pub fn new(tag: Tag, start_byte: usize, end_byte: usize, tokens: Option<Vec<Token>>) -> Self {
+    pub fn new(
+        tag: Tag,
+        // source: Option<&str>,
+        start_byte: usize,
+        end_byte: usize,
+        tokens: Option<Vec<Token>>,
+    ) -> Self {
         return Self {
             tag,
+            // value: source.map(|s| s[start_byte..end_byte].to_string()),
             start_byte,
             end_byte,
             tokens,
@@ -111,7 +88,7 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Char<'c> {
     pub source: &'c str,
     pub value: char,
@@ -132,10 +109,6 @@ impl<'c> Char<'c> {
             value,
             byte,
         }
-    }
-
-    pub fn owned(&self) -> Self {
-        Self::new(self.source, self.value, self.byte)
     }
 
     pub fn next_byte(&self) -> usize {

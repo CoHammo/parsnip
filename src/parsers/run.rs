@@ -1,16 +1,40 @@
 use super::super::*;
 
-parser!(Run run {
-    parsers: Vec<Parser> => inners: Box<[(Parser, Option<usize>)]>,
-    => len: usize,
-    inner_index: usize = 0,
-    inner_end_index: usize = 1,
-} {
-    inners = parsers.into_iter().map(|p| (p, None)).collect();
-    len = inners.len();
-});
+// parser!(Run run {
+//     parsers: Vec<Parser> => inners: Box<[(Parser, Option<usize>)]>,
+//     => len: usize,
+//     inner_index: usize = 0,
+//     inner_end_index: usize = 1,
+// } {
+//     inners = parsers.into_iter().map(|p| (p, None)).collect();
+//     len = inners.len();
+// });
 
+#[derive(Debug)]
+pub struct Run {
+    pub base: BaseParser,
+    inners: Box<[(Parser, Option<usize>)]>,
+    len: usize,
+    inner_index: usize,
+    inner_end_index: usize,
+}
+pub fn run(parsers: Vec<Parser>) -> Parser {
+    Parser::Run(Run::new(parsers))
+}
 impl Run {
+    pub fn new(parsers: Vec<Parser>) -> Self {
+        let len = parsers.len();
+        let mut me = Self {
+            base: BaseParser::new(),
+            inners: parsers.into_iter().map(|p| (p, None)).collect(),
+            len,
+            inner_index: 0,
+            inner_end_index: 0,
+        };
+        me.next_end();
+        me
+    }
+
     fn next_inner(&mut self) -> bool {
         let mut go = true;
         while self.inner_index < self.len - 1 && go {
@@ -22,7 +46,12 @@ impl Run {
                     }
                     go = false;
                 }
-                Stat::HasMatch(_) => go = false,
+                Stat::PossibleMatch(_) => {
+                    if self.inner_index == self.inner_end_index {
+                        self.next_end();
+                    }
+                    go = false;
+                }
                 Stat::Matched(_) => {
                     if self.inner_index == self.len - 1 {
                         return false;
@@ -39,19 +68,22 @@ impl Run {
 
     fn set_end(&mut self, index: usize) {
         if index < self.len - 1 {
-            self.inner_end_index = index + 2;
-            let p = &mut self.inners[self.inner_end_index - 1];
-            p.0.reset();
-            p.1 = None;
+            self.inner_end_index = index + 1;
+            self.next_end();
         }
     }
 
     fn next_end(&mut self) {
-        if self.inner_end_index < self.len {
+        while self.inner_end_index < self.len {
             let p = &mut self.inners[self.inner_end_index];
             p.0.reset();
             p.1 = None;
             self.inner_end_index += 1;
+            if let Stat::PossibleMatch(_) = p.0.stat() {
+                continue;
+            } else {
+                break;
+            }
         }
     }
 
@@ -75,18 +107,28 @@ impl CharParser for Run {
             match self.inners.get_mut(index) {
                 Some(parser) => match parser.0.take_char(ch) {
                     Stat::Running => {}
-                    Stat::HasMatch(end_byte) => {
+                    Stat::PossibleMatch(end_byte) => {
+                        let mut should_break = false;
+                        if let Some(prev_end_byte) = parser.1 {
+                            if end_byte != prev_end_byte {
+                                should_break = true;
+                            }
+                        } else {
+                            should_break = true;
+                        }
                         parser.1 = Some(end_byte);
                         self.set_end(index);
                         if index == self.len - 1 {
-                            self.base.stat = Stat::HasMatch(end_byte);
+                            self.base.stat = Stat::PossibleMatch(end_byte);
                         }
-                        break;
+                        if should_break {
+                            break;
+                        }
                     }
                     Stat::Matched(end_byte) => {
                         let mut should_break = false;
-                        if let Some(last_end_byte) = parser.1 {
-                            if last_end_byte != end_byte {
+                        if let Some(prev_end_byte) = parser.1 {
+                            if end_byte != prev_end_byte {
                                 should_break = true;
                             }
                         }
@@ -103,9 +145,11 @@ impl CharParser for Run {
                         }
                     }
                     Stat::Failed => {
+                        self.inner_end_index = index;
                         if index == self.inner_index {
                             self.base.stat = Stat::Failed;
                         }
+                        break;
                     }
                 },
                 None => self.base.stat = Stat::Failed,
@@ -115,15 +159,23 @@ impl CharParser for Run {
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
-        if self.inner_index == self.len - 1 {
-            if let Some(p) = self.inners.get_mut(self.inner_index) {
-                match p.0.finish(ch) {
+        for index in self.inner_index..self.inner_end_index {
+            match self.inners.get_mut(index) {
+                Some(parser) => match parser.0.finish(ch) {
                     Stat::Matched(end_byte) => {
-                        let toks = p.0.take_tokens();
-                        self.base.add_tokens(toks);
-                        self.base.stat = Stat::Matched(end_byte)
+                        self.collect_tokens();
+                        if index == self.len - 1 {
+                            self.base.stat = Stat::Matched(end_byte);
+                        }
                     }
-                    _ => self.base.stat = Stat::Failed,
+                    _ => {
+                        self.base.stat = Stat::Failed;
+                        break;
+                    }
+                },
+                None => {
+                    self.base.stat = Stat::Failed;
+                    break;
                 }
             }
         }
@@ -131,13 +183,16 @@ impl CharParser for Run {
     }
 
     fn reset(&mut self) {
-        self.base.reset();
-        for p in &mut self.inners[..self.inner_end_index] {
-            p.0.reset();
-            p.1 = None;
+        if !self.base.fresh {
+            self.base.reset();
+            for p in &mut self.inners {
+                p.0.reset();
+                p.1 = None;
+            }
+            self.inner_index = 0;
+            self.inner_end_index = 0;
+            self.next_end();
         }
-        self.inner_index = 0;
-        self.inner_end_index = 1;
     }
 
     fn string(&self) -> String {

@@ -51,7 +51,7 @@ impl CharParser for Rep {
                 if self.count == self.the_max {
                     self.base.stat = Stat::Matched(end_byte);
                 } else if self.count >= self.the_min {
-                    self.base.stat = Stat::HasMatch(end_byte);
+                    self.base.stat = Stat::PossibleMatch(end_byte);
                 }
             }
             Stat::Failed => {
@@ -68,7 +68,7 @@ impl CharParser for Rep {
 
     fn finish(&mut self, ch: &Char) -> Stat {
         if self.inner.fresh() {
-            if let Stat::HasMatch(end_byte) = self.base.stat {
+            if let Stat::PossibleMatch(end_byte) = self.base.stat {
                 self.base.stat = Stat::Matched(end_byte);
             } else {
                 self.base.stat = Stat::Failed;

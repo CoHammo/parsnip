@@ -35,8 +35,8 @@ impl CharParser for Str {
         //     "matching={:?} current={}, byte_offset={}, stat={:?}",
         //     self.chars,
         //     ch.value.escape_default(),
-        //     ch.byte_offset,
-        //     self.stat
+        //     ch.byte,
+        //     self.base.stat
         // );
         self.base.stat
     }

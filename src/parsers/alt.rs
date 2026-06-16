@@ -23,8 +23,8 @@ impl CharParser for Alt {
             match self.inners.get_mut(index) {
                 Some(parser) => match parser.take_char(ch) {
                     Stat::Running => {}
-                    Stat::HasMatch(end_byte) => {
-                        self.base.stat = Stat::HasMatch(end_byte);
+                    Stat::PossibleMatch(end_byte) => {
+                        self.base.stat = Stat::PossibleMatch(end_byte);
                     }
                     Stat::Matched(end_byte) => {
                         self.base.add_tokens(parser.take_tokens());
