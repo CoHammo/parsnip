@@ -19,6 +19,14 @@ pub use tok::*;
 
 parser_enum!(Str, Tok, Not, Run, Rep, Till, Alt);
 
+#[derive(Debug, Clone, Copy)]
+pub enum Stat {
+    Running,
+    PossibleMatch(usize),
+    Matched(usize),
+    Failed,
+}
+
 #[derive(Debug)]
 pub struct BaseParser {
     pub stat: Stat,
