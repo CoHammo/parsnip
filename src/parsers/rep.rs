@@ -2,22 +2,22 @@ use super::super::*;
 
 parser!(Rep rep {
     parser: Parser => inner: Box<Parser>,
-    min: Option<usize> => the_min: usize,
-    max: Option<usize> => the_max: usize,
+    min: Option<usize> => mmin: usize,
+    max: Option<usize> => mmax: usize,
     count: usize = 0,
     end_byte: usize = 0,
 } {
-    the_min = match min {
+    mmin = match min {
         Some(num) => match num {
             0 => 1,
             _ => num,
         },
         None => 1,
     };
-    the_max = match max {
+    mmax = match max {
         Some(num) => {
-            if num > 0 && num < the_min {
-                the_min
+            if num > 0 && num < mmin {
+                mmin
             } else {
                 num
             }
@@ -26,7 +26,7 @@ parser!(Rep rep {
             if min.is_none() {
                 0
             } else {
-                the_min
+                mmin
             }
         }
     };
@@ -35,27 +35,27 @@ parser!(Rep rep {
 
 impl Clone for Rep {
     fn clone(&self) -> Self {
-        Rep::new(*self.inner.clone(), Some(self.the_min), Some(self.the_max))
+        Rep::new(*self.inner.clone(), Some(self.mmin), Some(self.mmax))
     }
 }
 
 impl CharParser for Rep {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch);
-        match self.inner.take_char(&ch) {
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+        freshen!(self, chars.char);
+        match self.inner.take_char(chars) {
             Stat::Matched(end_byte) => {
                 self.count += 1;
                 self.end_byte = end_byte;
                 self.base.add_tokens(self.inner.take_tokens());
                 self.inner.reset();
-                if self.count == self.the_max {
+                if self.count == self.mmax {
                     self.base.stat = Stat::Matched(end_byte);
-                } else if self.count >= self.the_min {
+                } else if self.count >= self.mmin {
                     self.base.stat = Stat::PossibleMatch(end_byte);
                 }
             }
             Stat::Failed => {
-                if self.count >= self.the_min {
+                if self.count >= self.mmin {
                     self.base.stat = Stat::Matched(self.end_byte);
                 } else {
                     self.base.stat = Stat::Failed;
@@ -81,7 +81,7 @@ impl CharParser for Rep {
                 }
                 _ => {}
             }
-            if self.count >= self.the_min {
+            if self.count >= self.mmin {
                 self.base.add_tokens(self.inner.take_tokens());
                 self.inner.reset();
                 self.base.stat = Stat::Matched(self.end_byte);

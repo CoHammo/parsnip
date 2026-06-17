@@ -116,7 +116,7 @@ macro_rules! parser {
 
 #[macro_export]
 macro_rules! freshen {
-    ($self:ident, $ch:ident $(, $more:expr )?) => {
+    ($self:ident, $ch:expr $(, $more:expr )?) => {
         if $self.base.fresh {
             $self.base.start_byte = $ch.byte;
             $( $more )?
@@ -165,20 +165,19 @@ macro_rules! parser_enum {
                 }
             }
 
-            pub fn parse(&mut self, text: &Text, from_char: Option<usize>, to_char: Option<usize>) -> Stat {
+            pub fn parse(&mut self, text: &Text, range: impl RangeBounds<usize>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
-                        let mut last_char = Char::empty();
-                        for ch in text.chars(from_char, to_char) {
-                            last_char = ch.clone();
-                            match p.take_char(&ch) {
+                        let mut chars = text.chars(range);
+                        while chars.next() {
+                            match p.take_char(&mut chars) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.base.stat {
-                            Stat::Running | Stat::PossibleMatch(_) => p.finish(&last_char),
+                            Stat::Running | Stat::PossibleMatch(_) => p.finish(&chars.char),
                             _ => p.base.stat,
                         }
                     },)*
@@ -192,10 +191,10 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn take_char(&mut self, value: &Char) -> Stat {
+            fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => p.take_char(value),)*
+                    $(Self::$variant(p) => p.take_char(chars),)*
                 }
             }
 

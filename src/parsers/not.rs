@@ -32,11 +32,11 @@ impl Clone for Not {
 }
 
 impl CharParser for Not {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch, {
-            self.base.stat = Stat::PossibleMatch(ch.byte);
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+        freshen!(self, chars.char, {
+            self.base.stat = Stat::PossibleMatch(chars.char.byte);
         });
-        match self.inner.take_char(ch) {
+        match self.inner.take_char(chars) {
             Stat::Running | Stat::PossibleMatch(_) => {}
             Stat::Matched(_) => self.base.stat = Stat::Failed,
             Stat::Failed => self.base.stat = Stat::Matched(self.base.start_byte),

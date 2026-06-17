@@ -20,10 +20,6 @@ impl Tok {
         let start_byte = self.inner.start_byte();
         self.base.tokens = Some(vec![Token::new(
             self.tag,
-            // match self.save {
-            //     true => Some(source),
-            //     false => None,
-            // },
             start_byte,
             end_byte,
             self.inner.take_tokens(),
@@ -31,8 +27,8 @@ impl Tok {
     }
 }
 impl CharParser for Tok {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        match self.inner.take_char(ch) {
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+        match self.inner.take_char(chars) {
             Stat::Matched(end_byte) => {
                 self.tokenize(end_byte);
                 self.base.stat = Stat::Matched(end_byte);

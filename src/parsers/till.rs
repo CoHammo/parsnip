@@ -15,9 +15,9 @@ impl Clone for Till {
 }
 
 impl CharParser for Till {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch);
-        match self.inner.take_char(ch) {
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+        freshen!(self, chars.char);
+        match self.inner.take_char(chars) {
             Stat::Matched(end_byte) => {
                 self.base.add_tokens(self.inner.take_tokens());
                 self.base.stat = Stat::Matched(end_byte)

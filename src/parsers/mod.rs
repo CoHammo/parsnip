@@ -13,11 +13,10 @@ pub use not::*;
 // pub use rec::*;
 pub use rep::*;
 pub use run::*;
+use std::ops::RangeBounds;
 pub use str::*;
 pub use till::*;
 pub use tok::*;
-
-parser_enum!(Str, Tok, Not, Run, Rep, Till, Alt);
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
@@ -63,8 +62,10 @@ impl BaseParser {
 }
 
 pub trait CharParser {
-    fn take_char(&mut self, ch: &Char) -> Stat;
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat;
     fn finish(&mut self, ch: &Char) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
 }
+
+parser_enum!(Str, Tok, Not, Run, Rep, Till, Alt);

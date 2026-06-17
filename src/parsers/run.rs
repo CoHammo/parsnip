@@ -101,11 +101,11 @@ impl Clone for Run {
 }
 
 impl CharParser for Run {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch);
+    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+        freshen!(self, chars.char);
         for index in self.inner_index..self.inner_end_index {
             match self.inners.get_mut(index) {
-                Some(parser) => match parser.0.take_char(ch) {
+                Some(parser) => match parser.0.take_char(chars) {
                     Stat::Running => {}
                     Stat::PossibleMatch(end_byte) => {
                         let mut should_break = false;

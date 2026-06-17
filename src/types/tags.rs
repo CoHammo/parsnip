@@ -8,9 +8,9 @@ pub struct Tags {
 impl Tags {
     pub fn new() -> Self {
         let mut names = HashMap::new();
-        names.insert(Tag(0), "Text".into());
+        names.insert(Tag(0), "None".into());
         let mut ids = HashMap::new();
-        ids.insert("Text".into(), Tag(0));
+        ids.insert("None".into(), Tag(0));
         Self {
             count: 1,
             names,
@@ -18,7 +18,7 @@ impl Tags {
         }
     }
 
-    pub fn none(&self) -> Tag {
+    pub fn none() -> Tag {
         Tag(0)
     }
 
