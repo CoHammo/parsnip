@@ -151,13 +151,6 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn stat(&self) -> Stat {
-                match self {
-                    Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => p.base.stat,)*
-                }
-            }
-
             pub fn string(&self) -> String {
                 match self {
                     Self::Default => "Parser()".to_string(),
@@ -170,14 +163,14 @@ macro_rules! parser_enum {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
                         let mut chars = text.chars(range);
-                        while chars.next() {
-                            match p.take_char(&mut chars) {
+                        while let Some(ch) = chars.next() {
+                            match p.take_char(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.base.stat {
-                            Stat::Running | Stat::PossibleMatch(_) => p.finish(&chars.char),
+                            Stat::Running => p.finish(&chars.char),
                             _ => p.base.stat,
                         }
                     },)*
@@ -191,7 +184,7 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
+            fn take_char(&mut self, chars: &Char) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => p.take_char(chars),)*

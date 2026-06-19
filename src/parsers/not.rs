@@ -1,27 +1,27 @@
 use super::super::*;
 
-// parser!(Not not {
-//    parser: Parser => inner: Box<Parser>,
-// } {
-//     inner = Box::new(parser);
-// });
+parser!(Not not {
+   parser: Parser => inner: Box<Parser>,
+} {
+    inner = Box::new(parser);
+});
 
-#[derive(Debug)]
-pub struct Not {
-    pub base: BaseParser,
-    inner: Box<Parser>,
-}
-pub fn not(parser: Parser) -> Parser {
-    Parser::Not(Not::new(parser))
-}
 impl Not {
-    pub fn new(parser: Parser) -> Self {
-        let mut me = Self {
-            base: BaseParser::new(),
-            inner: Box::new(parser),
-        };
-        me.base.stat = Stat::PossibleMatch(0);
-        me
+    fn lookahead(&mut self, ch: &Char) {
+        let mut peeks = ch.peeks();
+        while let Some(c) = peeks.next() {
+            match self.inner.take_char(&c) {
+                Stat::Running => {}
+                Stat::Matched(_) => {
+                    self.base.stat = Stat::Failed;
+                    break;
+                }
+                Stat::Failed => {
+                    self.base.stat = Stat::Matched(ch.byte - 1);
+                    break;
+                }
+            }
+        }
     }
 }
 
@@ -32,22 +32,17 @@ impl Clone for Not {
 }
 
 impl CharParser for Not {
-    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
-        freshen!(self, chars.char, {
-            self.base.stat = Stat::PossibleMatch(chars.char.byte);
+    fn take_char(&mut self, ch: &Char) -> Stat {
+        freshen!(self, ch, {
+            self.lookahead(ch);
         });
-        match self.inner.take_char(chars) {
-            Stat::Running | Stat::PossibleMatch(_) => {}
-            Stat::Matched(_) => self.base.stat = Stat::Failed,
-            Stat::Failed => self.base.stat = Stat::Matched(self.base.start_byte),
-        }
         self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
             Stat::Matched(_) => self.base.stat = Stat::Failed,
-            _ => self.base.stat = Stat::Matched(self.base.start_byte),
+            _ => self.base.stat = Stat::Matched(self.base.start_byte - 1),
         }
         self.base.stat
     }
@@ -55,7 +50,6 @@ impl CharParser for Not {
     fn reset(&mut self) {
         if !self.base.fresh {
             self.base.reset();
-            self.base.stat = Stat::PossibleMatch(0);
             self.inner.reset();
         }
     }

@@ -17,15 +17,12 @@ impl Clone for Alt {
 }
 
 impl CharParser for Alt {
-    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
-        freshen!(self, chars.char);
+    fn take_char(&mut self, ch: &Char) -> Stat {
+        freshen!(self, ch);
         for index in self.running_inners.clone() {
             match self.inners.get_mut(index) {
-                Some(parser) => match parser.take_char(chars) {
+                Some(parser) => match parser.take_char(ch) {
                     Stat::Running => {}
-                    Stat::PossibleMatch(end_byte) => {
-                        self.base.stat = Stat::PossibleMatch(end_byte);
-                    }
                     Stat::Matched(end_byte) => {
                         self.base.add_tokens(parser.take_tokens());
                         self.base.stat = Stat::Matched(end_byte);

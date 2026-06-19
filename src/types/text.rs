@@ -1,32 +1,50 @@
 use icu_normalizer::ComposingNormalizer;
 use std::{
-    collections::VecDeque,
-    iter::{Skip, Take},
     ops::{Bound::*, RangeBounds},
     str::CharIndices,
 };
 
 #[derive(Debug, Clone)]
-pub struct Char<'c> {
-    pub source: &'c str,
+pub struct Char<'a> {
     pub value: char,
     pub byte: usize,
+    chars: Option<&'a ParseChars<'a>>,
 }
-impl<'c> Char<'c> {
-    pub fn empty() -> Self {
+impl<'a> Char<'a> {
+    pub fn new(value: char, byte: usize, chars: &'a ParseChars<'a>) -> Self {
         Self {
-            source: "",
-            value: '\0',
-            byte: 0,
+            value,
+            byte,
+            chars: Some(chars),
         }
     }
 
-    pub fn new(source: &'c str, value: char, byte: usize) -> Self {
+    pub fn empty() -> Self {
         Self {
-            source,
+            value: '\0',
+            byte: 0,
+            chars: None,
+        }
+    }
+
+    pub fn basic(value: char, byte: usize) -> Self {
+        Self {
             value,
             byte,
+            chars: None,
         }
+    }
+
+    pub fn with(&self, chars: &'a ParseChars<'a>) -> Self {
+        Self {
+            value: self.value,
+            byte: self.byte,
+            chars: Some(chars),
+        }
+    }
+
+    pub fn peeks(&self) -> ParseChars<'a> {
+        self.chars.unwrap().clone()
     }
 
     pub fn next_byte(&self) -> usize {
@@ -34,81 +52,75 @@ impl<'c> Char<'c> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ParseChars<'a> {
-    value: &'a str,
+    fresh: bool,
+    char_end: usize,
     char_index: usize,
     pub char: Char<'a>,
-    char_buffer: VecDeque<Char<'a>>,
-    chars: Take<Skip<CharIndices<'a>>>,
+    chars: CharIndices<'a>,
 }
+
+impl Clone for ParseChars<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            fresh: true,
+            char_end: self.char_end,
+            char_index: self.char_index,
+            char: self.char.clone(),
+            chars: self.chars.clone(),
+        }
+    }
+}
+
 impl<'a> ParseChars<'a> {
     pub fn new(value: &'a str, range: impl RangeBounds<usize>) -> Self {
-        let start = match range.start_bound() {
+        let char_start = match range.start_bound() {
             Included(start) => *start,
             Excluded(start) => *start + 1,
             Unbounded => 0,
         };
-        let end = match range.end_bound() {
+        let char_end = match range.end_bound() {
             Included(end) => *end + 1,
             Excluded(end) => *end,
             Unbounded => value.len(),
         };
+        let mut chars = value.char_indices();
+        let mut i = 0;
+        while i < char_start {
+            chars.next();
+            i += 1;
+        }
+        let c = if char_start < char_end
+            && let Some((byte, c)) = chars.next()
+        {
+            Char::basic(c, byte)
+        } else {
+            Char::empty()
+        };
         Self {
-            value,
-            char_index: 0,
-            char: Char::empty(),
-            char_buffer: VecDeque::new(),
-            chars: value.char_indices().skip(start).take(end),
-        }
-    }
-}
-// impl<'a> Iterator for ParseChars<'a> {
-//     type Item = Char<'a>;
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if let Some(c) = self.char_buffer.pop_front() {
-//             self.current_char = c.clone();
-//             Some(c)
-//         } else if let Some((byte, c)) = self.chars.next() {
-//             self.current_char = Char::new(self.value, c, byte);
-//             self.char_index += 1;
-//             Some(self.current_char.clone())
-//         } else {
-//             None
-//         }
-//     }
-// }
-impl<'a> ParseChars<'a> {
-    pub fn next(&mut self) -> bool {
-        if let Some(c) = self.char_buffer.pop_front() {
-            self.char = c;
-            self.char_index += 1;
-            true
-        } else if let Some((byte, c)) = self.chars.next() {
-            self.char = Char::new(self.value, c, byte);
-            self.char_index += 1;
-            true
-        } else {
-            false
+            fresh: true,
+            char_end,
+            char_index: char_start,
+            char: c,
+            chars,
         }
     }
 
-    pub fn peek(&mut self, offset: usize) -> Option<&Char<'a>> {
-        if offset == 0 {
-            Some(&self.char)
-        } else {
-            while offset - 1 >= self.char_buffer.len()
-                && let Some((byte, c)) = self.chars.next()
-            {
-                let ch = Char::new(self.value, c, byte);
-                self.char_buffer.push_back(ch);
-            }
-            if let ch @ Some(_) = self.char_buffer.get(offset - 1) {
-                ch
+    pub fn next<'b>(&'b mut self) -> Option<Char<'b>> {
+        if self.char_index < self.char_end {
+            if self.fresh {
+                self.fresh = false;
+                Some(self.char.with(self))
+            } else if let Some((byte, c)) = self.chars.next() {
+                self.char_index += 1;
+                self.char = Char::basic(c, byte);
+                Some(Char::new(c, byte, self))
             } else {
                 None
             }
+        } else {
+            None
         }
     }
 }

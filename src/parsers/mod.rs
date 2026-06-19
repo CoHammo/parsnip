@@ -21,7 +21,7 @@ pub use tok::*;
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
     Running,
-    PossibleMatch(usize),
+    // PossibleMatch(usize),
     Matched(usize),
     Failed,
 }
@@ -62,7 +62,7 @@ impl BaseParser {
 }
 
 pub trait CharParser {
-    fn take_char(&mut self, chars: &mut ParseChars) -> Stat;
+    fn take_char(&mut self, ch: &Char) -> Stat;
     fn finish(&mut self, ch: &Char) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;

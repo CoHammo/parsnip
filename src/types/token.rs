@@ -5,6 +5,7 @@ pub struct Token {
     pub tag: Tag,
     pub start_byte: usize,
     pub end_byte: usize,
+    pub len: usize,
     pub tokens: Option<Vec<Token>>,
 }
 impl Token {
@@ -13,6 +14,7 @@ impl Token {
             tag,
             start_byte,
             end_byte,
+            len: end_byte - start_byte,
             tokens,
         };
     }

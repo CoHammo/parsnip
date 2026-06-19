@@ -27,8 +27,8 @@ impl Tok {
     }
 }
 impl CharParser for Tok {
-    fn take_char(&mut self, chars: &mut ParseChars) -> Stat {
-        match self.inner.take_char(chars) {
+    fn take_char(&mut self, ch: &Char) -> Stat {
+        match self.inner.take_char(ch) {
             Stat::Matched(end_byte) => {
                 self.tokenize(end_byte);
                 self.base.stat = Stat::Matched(end_byte);
