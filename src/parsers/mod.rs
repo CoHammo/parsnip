@@ -69,4 +69,4 @@ pub trait CharParser {
     fn string(&self) -> String;
 }
 
-parser_enum!(Str, Tok, Not, Run, Rep, Till, Alt);
+parser_enum!(Dbg, Str, Tok, Not, Run, Rep, Till, Alt);
