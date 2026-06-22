@@ -1,62 +1,82 @@
 use super::super::*;
+use std::ops::{Bound::*, RangeBounds};
 
-parser!(Rep rep {
-    parser: Parser => inner: Box<Parser>,
-    min: Option<usize> => mmin: usize,
-    max: Option<usize> => mmax: usize,
-    count: usize = 0,
-    end_byte: usize = 0,
-    future_stat: Stat = Stat::Running,
-} {
-    mmin = match min {
-        Some(num) => match num {
-            0 => 1,
-            _ => num,
-        },
-        None => 1,
-    };
-    mmax = match max {
-        Some(num) => {
-            if num > 0 && num < mmin {
-                mmin
-            } else {
-                num
+#[derive(Debug)]
+pub struct Rep {
+    pub base: BaseParser,
+    inner: Box<Parser>,
+    min: usize,
+    max: usize,
+    count: usize,
+    end_byte: usize,
+}
+impl Rep {
+    pub fn new(parser: Parser, range: impl RangeBounds<usize>) -> Self {
+        let min = match range.start_bound() {
+            Included(&m) | Excluded(&m) => match m {
+                0 => 1,
+                _ => m,
+            },
+            Unbounded => 1,
+        };
+        let max = match range.end_bound() {
+            Included(&m) => {
+                if m < min {
+                    min
+                } else {
+                    m
+                }
             }
-        }
-        None => {
-            if min.is_none() {
-                0
-            } else {
-                mmin
+            Excluded(&m) => {
+                if m < min {
+                    min
+                } else {
+                    m - 1
+                }
             }
+            Unbounded => 0,
+        };
+
+        Self {
+            base: BaseParser::new(),
+            inner: Box::new(parser),
+            min,
+            max,
+            count: 0,
+            end_byte: 0,
         }
-    };
-    inner = Box::new(parser);
-});
+    }
+}
+pub fn rep(parser: Parser, range: impl RangeBounds<usize>) -> Parser {
+    Parser::Rep(Rep::new(parser, range))
+}
 
 impl Clone for Rep {
     fn clone(&self) -> Self {
-        Rep::new(*self.inner.clone(), Some(self.mmin), Some(self.mmax))
+        Rep::new(*self.inner.clone(), self.min..=self.max)
     }
 }
 
 impl Rep {
-    fn lookahead(&mut self, ch: &Char) {
+    fn look(&mut self, ch: &Char) {
         let mut peeks = ch.peeks();
         while let Some(c) = peeks.next() {
             match self.inner.take_char(&c) {
-                Stat::Matched(end_byte) => {
+                Stat::Matched(byte) => {
                     self.count += 1;
-                    self.end_byte = end_byte;
+                    self.end_byte = byte;
                     self.base.add_tokens(self.inner.take_tokens());
                     self.inner.reset();
-                    if self.count == self.mmax {
-                        self.base.stat = Stat::Matched(end_byte);
+                    if byte == c.byte {
+                        peeks.repeat();
+                    }
+                    if self.count == self.max {
+                        self.base.stat = Stat::Matched(byte);
                         break;
                     }
                 }
                 Stat::Failed => {
-                    if self.count >= self.mmin {
+                    if self.count >= self.min {
                         self.base.stat = Stat::Matched(self.end_byte);
                     } else {
                         self.base.stat = Stat::Failed;
@@ -72,7 +92,7 @@ impl Rep {
 impl CharParser for Rep {
     fn take_char(&mut self, ch: &Char) -> Stat {
         freshen!(self, ch, {
-            self.lookahead(ch);
+            self.look(ch);
         });
 
         // match self.inner.take_char(ch) {
@@ -110,7 +130,7 @@ impl CharParser for Rep {
                 _ => {}
             }
         }
-        if self.count >= self.mmin {
+        if self.count >= self.min {
             self.base.add_tokens(self.inner.take_tokens());
             self.inner.reset();
             self.base.stat = Stat::Matched(self.end_byte);

@@ -1,39 +1,57 @@
 use super::super::*;
 
-parser!(Run run {
-    parsers: Vec<Parser> => inners: Box<[Parser]>,
-    => len: usize,
-    inner_index: usize = 0,
-    check_after_byte: usize = 0,
-} {
-    inners = parsers.into_boxed_slice();
-    len = inners.len();
-});
+#[derive(Debug)]
+pub struct Run {
+    pub base: BaseParser,
+    inners: Box<[Parser]>,
+    len: usize,
+    index: usize,
+    check_at_byte: usize,
+}
+impl Run {
+    pub fn new(parsers: Vec<Parser>) -> Self {
+        let len = parsers.len();
+        Self {
+            base: BaseParser::new(),
+            inners: parsers.into_boxed_slice(),
+            len,
+            index: 0,
+            check_at_byte: 0,
+        }
+    }
+}
+pub fn run(parsers: Vec<Parser>) -> Parser {
+    Parser::Run(Run::new(parsers))
+}
 
 impl Clone for Run {
     fn clone(&self) -> Self {
-        Run::new(self.inners.clone().to_vec())
+        Self {
+            base: BaseParser::new(),
+            inners: self.inners.clone(),
+            len: self.len,
+            index: 0,
+            check_at_byte: 0,
+        }
     }
 }
 
 impl CharParser for Run {
     fn take_char(&mut self, ch: &Char) -> Stat {
-        if self.base.fresh || ch.byte > self.check_after_byte {
+        if ch.byte >= self.check_at_byte {
             freshen!(self, ch);
-            let parser = &mut self.inners[self.inner_index];
+            let parser = &mut self.inners[self.index];
             match parser.take_char(ch) {
-                Stat::Matched(end_byte) => {
+                Stat::Matched(byte) => {
                     self.base.add_tokens(parser.take_tokens());
-                    if self.inner_index == self.len - 1 {
-                        self.base.stat = Stat::Matched(end_byte);
+                    if self.index == self.len - 1 {
+                        self.base.stat = Stat::Matched(byte);
                     } else {
-                        self.inner_index += 1;
-                        if end_byte < ch.byte {
-                            if let Some(c) = ch.peeks().next() {
-                                self.take_char(&c);
-                            }
+                        self.index += 1;
+                        if byte == ch.byte {
+                            self.take_char(ch);
                         } else {
-                            self.check_after_byte = end_byte;
+                            self.check_at_byte = byte;
                         }
                     }
                 }
@@ -45,20 +63,20 @@ impl CharParser for Run {
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
-        let parser = &mut self.inners[self.inner_index];
+        let parser = &mut self.inners[self.index];
         match parser.finish(ch) {
-            Stat::Matched(end_byte) => {
+            Stat::Matched(byte) => {
                 self.base.add_tokens(parser.take_tokens());
-                if self.inner_index == self.len - 1 {
-                    self.base.stat = Stat::Matched(end_byte);
-                } else if end_byte == ch.byte {
-                    self.inner_index += 1;
+                if self.index == self.len - 1 {
+                    self.base.stat = Stat::Matched(byte);
+                } else if byte == ch.byte {
+                    self.index += 1;
                     self.finish(ch);
                 } else {
                     self.base.stat = Stat::Failed;
                 }
             }
-            _ => {}
+            _ => self.base.stat = Stat::Failed,
         }
         self.base.stat
     }
@@ -66,10 +84,10 @@ impl CharParser for Run {
     fn reset(&mut self) {
         if !self.base.fresh {
             self.base.reset();
-            for index in 0..=self.inner_index {
+            for index in 0..=self.index {
                 self.inners[index].reset();
             }
-            self.inner_index = 0;
+            self.index = 0;
         }
     }
 

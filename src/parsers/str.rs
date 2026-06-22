@@ -1,19 +1,40 @@
 use super::super::*;
 use icu_normalizer::ComposingNormalizer;
 
-parser!(Str s {
-    value: &str => chars: Box<[char]>,
-    => len: usize,
-    char_index: usize = 0,
-    match_byte: usize = 0,
-} {
-    chars = ComposingNormalizer::new_nfc().normalize(&value).chars().collect();
-    len = chars.len();
-});
+#[derive(Debug)]
+pub struct Str {
+    pub base: BaseParser,
+    chars: Box<[char]>,
+    len: usize,
+    index: usize,
+}
+impl Str {
+    pub fn new(value: &str) -> Self {
+        let chars = ComposingNormalizer::new_nfc()
+            .normalize(value)
+            .chars()
+            .collect::<Box<[char]>>();
+        let len = chars.len();
+        Self {
+            base: BaseParser::new(),
+            chars,
+            len,
+            index: 0,
+        }
+    }
+}
+pub fn s(value: &str) -> Parser {
+    Parser::Str(Str::new(value))
+}
 
 impl Clone for Str {
     fn clone(&self) -> Self {
-        Str::new(&self.chars.iter().collect::<String>())
+        Self {
+            base: BaseParser::new(),
+            chars: self.chars.clone(),
+            len: self.len,
+            index: 0,
+        }
     }
 }
 
@@ -22,15 +43,13 @@ impl CharParser for Str {
         freshen!(self, ch);
         if self.len == 0 {
             self.base.stat = Stat::Failed;
-        } else {
-            if ch.value == self.chars[self.char_index] {
-                self.char_index += 1;
-                if self.char_index == self.len {
-                    self.base.stat = Stat::Matched(ch.byte);
-                }
-            } else {
-                self.base.stat = Stat::Failed;
+        } else if ch.value == self.chars[self.index] {
+            self.index += 1;
+            if self.index == self.len {
+                self.base.stat = Stat::Matched(ch.next_byte());
             }
+        } else {
+            self.base.stat = Stat::Failed;
         }
         // println!(
         //     "matching={:?}, current={}, byte_offset={}, stat={:?}",
@@ -44,7 +63,7 @@ impl CharParser for Str {
 
     fn finish(&mut self, ch: &Char) -> Stat {
         if self.len == 0 {
-            self.base.stat = Stat::Matched(ch.byte);
+            self.base.stat = Stat::Matched(ch.next_byte());
         } else {
             self.base.stat = Stat::Failed;
         };
@@ -52,8 +71,10 @@ impl CharParser for Str {
     }
 
     fn reset(&mut self) {
-        self.base.reset();
-        self.char_index = 0;
+        if !self.base.fresh {
+            self.base.reset();
+            self.index = 0;
+        }
     }
 
     fn string(&self) -> String {

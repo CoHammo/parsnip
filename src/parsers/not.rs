@@ -1,13 +1,20 @@
 use super::super::*;
 
-parser!(Not not {
-   parser: Parser => inner: Box<Parser>,
-} {
-    inner = Box::new(parser);
-});
+#[derive(Debug)]
+pub struct Not {
+    pub base: BaseParser,
+    inner: Box<Parser>,
+}
 
 impl Not {
-    fn lookahead(&mut self, ch: &Char) {
+    pub fn new(parser: Parser) -> Self {
+        Self {
+            base: BaseParser::new(),
+            inner: Box::new(parser),
+        }
+    }
+
+    fn look(&mut self, ch: &Char) {
         let mut peeks = ch.peeks();
         while let Some(c) = peeks.next() {
             match self.inner.take_char(&c) {
@@ -17,7 +24,7 @@ impl Not {
                     break;
                 }
                 Stat::Failed => {
-                    self.base.stat = Stat::Matched(ch.byte - 1);
+                    self.base.stat = Stat::Matched(ch.byte);
                     break;
                 }
             }
@@ -34,7 +41,7 @@ impl Clone for Not {
 impl CharParser for Not {
     fn take_char(&mut self, ch: &Char) -> Stat {
         freshen!(self, ch, {
-            self.lookahead(ch);
+            self.look(ch);
         });
         self.base.stat
     }
@@ -42,7 +49,7 @@ impl CharParser for Not {
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
             Stat::Matched(_) => self.base.stat = Stat::Failed,
-            _ => self.base.stat = Stat::Matched(self.base.start_byte - 1),
+            _ => self.base.stat = Stat::Matched(ch.byte),
         }
         self.base.stat
     }

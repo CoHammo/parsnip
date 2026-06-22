@@ -54,7 +54,7 @@ impl<'a> Char<'a> {
 
 #[derive(Debug)]
 pub struct ParseChars<'a> {
-    fresh: bool,
+    repeat: bool,
     char_end: usize,
     char_index: usize,
     pub char: Char<'a>,
@@ -64,7 +64,7 @@ pub struct ParseChars<'a> {
 impl Clone for ParseChars<'_> {
     fn clone(&self) -> Self {
         Self {
-            fresh: true,
+            repeat: true,
             char_end: self.char_end,
             char_index: self.char_index,
             char: self.char.clone(),
@@ -99,7 +99,7 @@ impl<'a> ParseChars<'a> {
             Char::empty()
         };
         Self {
-            fresh: true,
+            repeat: true,
             char_end,
             char_index: char_start,
             char: c,
@@ -107,15 +107,19 @@ impl<'a> ParseChars<'a> {
         }
     }
 
+    pub fn repeat(&mut self) {
+        self.repeat = true;
+    }
+
     pub fn next<'b>(&'b mut self) -> Option<Char<'b>> {
         if self.char_index < self.char_end {
-            if self.fresh {
-                self.fresh = false;
+            if self.repeat {
+                self.repeat = false;
                 Some(self.char.with(self))
             } else if let Some((byte, c)) = self.chars.next() {
                 self.char_index += 1;
                 self.char = Char::basic(c, byte);
-                Some(Char::new(c, byte, self))
+                Some(self.char.with(self))
             } else {
                 None
             }

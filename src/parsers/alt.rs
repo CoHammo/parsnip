@@ -1,69 +1,83 @@
-use std::collections::HashSet;
-
 use super::super::*;
 
-parser!(Alt alt {
-    parsers: Vec<Parser> => inners: Box<[Parser]>,
-    => running_inners: HashSet<usize>,
-} {
-    running_inners = (0..parsers.len()).collect();
-    inners = parsers.into_boxed_slice();
-});
+#[derive(Debug)]
+pub struct Alt {
+    pub base: BaseParser,
+    inners: Box<[(bool, Parser)]>,
+}
+impl Alt {
+    pub fn new(parsers: Vec<Parser>) -> Self {
+        Self {
+            base: BaseParser::new(),
+            inners: parsers.into_iter().map(|p| (true, p)).collect(),
+        }
+    }
+}
+pub fn alt(parsers: Vec<Parser>) -> Parser {
+    Parser::Alt(Alt::new(parsers))
+}
 
 impl Clone for Alt {
     fn clone(&self) -> Self {
-        Alt::new(self.inners.to_vec())
+        Self {
+            base: BaseParser::new(),
+            inners: self.inners.iter().map(|(_, p)| (true, p.clone())).collect(),
+        }
     }
 }
 
 impl CharParser for Alt {
     fn take_char(&mut self, ch: &Char) -> Stat {
         freshen!(self, ch);
-        for index in self.running_inners.clone() {
-            match self.inners.get_mut(index) {
-                Some(parser) => match parser.take_char(ch) {
+        let mut running = false;
+        for parser in &mut self.inners {
+            if parser.0 {
+                running = true;
+                match parser.1.take_char(ch) {
                     Stat::Running => {}
-                    Stat::Matched(end_byte) => {
-                        self.base.add_tokens(parser.take_tokens());
-                        self.base.stat = Stat::Matched(end_byte);
+                    Stat::Matched(byte) => {
+                        self.base.add_tokens(parser.1.take_tokens());
+                        self.base.stat = Stat::Matched(byte);
                         break;
                     }
                     Stat::Failed => {
-                        self.running_inners.take(&index);
-                        if self.running_inners.is_empty() {
-                            self.base.stat = Stat::Failed;
-                            break;
-                        }
+                        parser.0 = false;
                     }
-                },
-                None => self.base.stat = Stat::Failed,
+                }
             }
+        }
+        if !running {
+            self.base.stat = Stat::Failed;
         }
         self.base.stat
     }
 
     fn finish(&mut self, ch: &Char) -> Stat {
-        for runi in self.running_inners.clone().iter() {
-            match self.inners.get_mut(*runi) {
-                Some(parser) => match parser.finish(ch) {
-                    Stat::Matched(end_byte) => {
-                        self.base.add_tokens(parser.take_tokens());
-                        self.base.stat = Stat::Matched(end_byte);
+        for parser in &mut self.inners {
+            if parser.0 {
+                match parser.1.finish(ch) {
+                    Stat::Matched(byte) => {
+                        self.base.add_tokens(parser.1.take_tokens());
+                        self.base.stat = Stat::Matched(byte);
                         break;
                     }
-                    _ => self.base.stat = Stat::Failed,
-                },
-                None => self.base.stat = Stat::Failed,
+                    _ => {}
+                }
             }
+        }
+        if let Stat::Running = self.base.stat {
+            self.base.stat = Stat::Failed;
         }
         self.base.stat
     }
 
     fn reset(&mut self) {
-        self.base.reset();
-        self.running_inners = (0..self.inners.len()).collect();
-        for parser in self.inners.iter_mut() {
-            parser.reset();
+        if !self.base.fresh {
+            self.base.reset();
+            for parser in &mut self.inners {
+                parser.0 = true;
+                parser.1.reset();
+            }
         }
     }
 
@@ -72,7 +86,7 @@ impl CharParser for Alt {
             "Alt([{}])",
             self.inners
                 .iter()
-                .map(|p| p.string())
+                .map(|p| p.1.string())
                 .collect::<Vec<String>>()
                 .join(", ")
         )

@@ -1,17 +1,27 @@
 use super::super::*;
 
-parser!(Tok tok {
-    parser: Parser => inner: Box<Parser>,
+#[derive(Debug)]
+pub struct Tok {
+    pub base: BaseParser,
+    inner: Box<Parser>,
     tag: Tag,
-    save_value: Option<bool> => save: bool,
-} {
-    inner = Box::new(parser);
-    save = save_value.unwrap_or(true);
-});
+}
+impl Tok {
+    pub fn new(parser: Parser, tag: Tag) -> Self {
+        Self {
+            base: BaseParser::new(),
+            inner: Box::new(parser),
+            tag,
+        }
+    }
+}
+pub fn tok(parser: Parser, tag: Tag) -> Parser {
+    Parser::Tok(Tok::new(parser, tag))
+}
 
 impl Clone for Tok {
     fn clone(&self) -> Self {
-        Tok::new(*self.inner.clone(), self.tag.clone(), Some(self.save))
+        Tok::new(*self.inner.clone(), self.tag)
     }
 }
 
@@ -29,11 +39,12 @@ impl Tok {
 impl CharParser for Tok {
     fn take_char(&mut self, ch: &Char) -> Stat {
         match self.inner.take_char(ch) {
-            Stat::Matched(end_byte) => {
-                self.tokenize(end_byte);
-                self.base.stat = Stat::Matched(end_byte);
+            Stat::Running => {}
+            Stat::Matched(byte) => {
+                self.tokenize(byte);
+                self.base.stat = Stat::Matched(byte);
             }
-            stat => self.base.stat = stat,
+            Stat::Failed => self.base.stat = Stat::Failed,
         };
         self.base.fresh = self.inner.fresh();
         self.base.stat
@@ -41,9 +52,9 @@ impl CharParser for Tok {
 
     fn finish(&mut self, ch: &Char) -> Stat {
         match self.inner.finish(ch) {
-            Stat::Matched(end_byte) => {
-                self.tokenize(end_byte);
-                self.base.stat = Stat::Matched(end_byte);
+            Stat::Matched(byte) => {
+                self.tokenize(byte);
+                self.base.stat = Stat::Matched(byte);
             }
             stat => self.base.stat = stat,
         };

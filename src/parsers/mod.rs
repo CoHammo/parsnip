@@ -1,4 +1,5 @@
 mod alt;
+mod dbg;
 mod not;
 mod rec;
 mod rep;
@@ -9,6 +10,7 @@ mod tok;
 
 use super::*;
 pub use alt::*;
+pub use dbg::*;
 pub use not::*;
 // pub use rec::*;
 pub use rep::*;
@@ -25,7 +27,6 @@ pub enum Stat {
     Matched(usize),
     Failed,
 }
-
 #[derive(Debug)]
 pub struct BaseParser {
     pub stat: Stat,
