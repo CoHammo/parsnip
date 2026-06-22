@@ -22,7 +22,7 @@ impl<'a> Node<'a> {
     pub fn make(source: &'a str, token: &Token) -> Self {
         Self {
             tag: token.tag,
-            value: &source[token.start_byte..token.end_byte],
+            value: &source[token.start..token.end],
             children: match &token.tokens {
                 Some(tokens) => Some(tokens.iter().map(|t| Node::make(source, t)).collect()),
                 None => None,

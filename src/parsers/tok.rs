@@ -1,13 +1,13 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Tok {
+pub struct Tok<T: PI> {
     pub base: BaseParser,
-    inner: Box<Parser>,
+    inner: Box<Parser<T>>,
     tag: Tag,
 }
-impl Tok {
-    pub fn new(parser: Parser, tag: Tag) -> Self {
+impl<T: PI> Tok<T> {
+    pub fn new(parser: Parser<T>, tag: Tag) -> Self {
         Self {
             base: BaseParser::new(),
             inner: Box::new(parser),
@@ -15,34 +15,33 @@ impl Tok {
         }
     }
 }
-pub fn tok(parser: Parser, tag: Tag) -> Parser {
+pub fn tok<T: PI>(parser: Parser<T>, tag: Tag) -> Parser<T> {
     Parser::Tok(Tok::new(parser, tag))
 }
 
-impl Clone for Tok {
+impl<T: PI> Clone for Tok<T> {
     fn clone(&self) -> Self {
         Tok::new(*self.inner.clone(), self.tag)
     }
 }
 
-impl Tok {
-    fn tokenize(&mut self, end_byte: usize) {
-        let start_byte = self.inner.start_byte();
+impl<T: PI> Tok<T> {
+    fn tokenize(&mut self, end: usize) {
         self.base.tokens = Some(vec![Token::new(
             self.tag,
-            start_byte,
-            end_byte,
+            self.inner.start(),
+            end,
             self.inner.take_tokens(),
         )]);
     }
 }
-impl CharParser for Tok {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        match self.inner.take_char(ch) {
+impl<T: PI> ItemParser<T> for Tok<T> {
+    fn take(&mut self, item: &IterItem<T>) -> Stat {
+        match self.inner.take(item) {
             Stat::Running => {}
-            Stat::Matched(byte) => {
-                self.tokenize(byte);
-                self.base.stat = Stat::Matched(byte);
+            Stat::Matched(end) => {
+                self.tokenize(end);
+                self.base.stat = Stat::Matched(end);
             }
             Stat::Failed => self.base.stat = Stat::Failed,
         };
@@ -50,11 +49,11 @@ impl CharParser for Tok {
         self.base.stat
     }
 
-    fn finish(&mut self, ch: &Char) -> Stat {
-        match self.inner.finish(ch) {
-            Stat::Matched(byte) => {
-                self.tokenize(byte);
-                self.base.stat = Stat::Matched(byte);
+    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+        match self.inner.finish(item) {
+            Stat::Matched(end) => {
+                self.tokenize(end);
+                self.base.stat = Stat::Matched(end);
             }
             stat => self.base.stat = stat,
         };

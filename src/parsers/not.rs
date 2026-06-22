@@ -1,30 +1,30 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Not {
+pub struct Not<T: PI> {
     pub base: BaseParser,
-    inner: Box<Parser>,
+    inner: Box<Parser<T>>,
 }
 
-impl Not {
-    pub fn new(parser: Parser) -> Self {
+impl<T: PI> Not<T> {
+    pub fn new(parser: Parser<T>) -> Self {
         Self {
             base: BaseParser::new(),
             inner: Box::new(parser),
         }
     }
 
-    fn look(&mut self, ch: &Char) {
-        let mut peeks = ch.peeks();
-        while let Some(c) = peeks.next() {
-            match self.inner.take_char(&c) {
+    fn look(&mut self, item: &IterItem<T>) {
+        let mut peeks = item.peeks();
+        while let Some(it) = peeks.next() {
+            match self.inner.take(&it) {
                 Stat::Running => {}
                 Stat::Matched(_) => {
                     self.base.stat = Stat::Failed;
                     break;
                 }
                 Stat::Failed => {
-                    self.base.stat = Stat::Matched(ch.byte);
+                    self.base.stat = Stat::Matched(item.index());
                     break;
                 }
             }
@@ -32,24 +32,24 @@ impl Not {
     }
 }
 
-impl Clone for Not {
+impl<T: PI> Clone for Not<T> {
     fn clone(&self) -> Self {
         Not::new(*self.inner.clone())
     }
 }
 
-impl CharParser for Not {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch, {
-            self.look(ch);
+impl<T: PI> ItemParser<T> for Not<T> {
+    fn take(&mut self, item: &IterItem<T>) -> Stat {
+        freshen!(self, item, {
+            self.look(item);
         });
         self.base.stat
     }
 
-    fn finish(&mut self, ch: &Char) -> Stat {
-        match self.inner.finish(ch) {
+    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+        match self.inner.finish(item) {
             Stat::Matched(_) => self.base.stat = Stat::Failed,
-            _ => self.base.stat = Stat::Matched(ch.byte),
+            _ => self.base.stat = Stat::Matched(item.index()),
         }
         self.base.stat
     }

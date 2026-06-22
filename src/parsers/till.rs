@@ -1,13 +1,13 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Till {
+pub struct Till<T: PI> {
     pub base: BaseParser,
-    inner: Box<Parser>,
+    inner: Box<Parser<T>>,
     match_finish: bool,
 }
-impl Till {
-    pub fn new(parser: Parser, match_end: bool) -> Self {
+impl<T: PI> Till<T> {
+    pub fn new(parser: Parser<T>, match_end: bool) -> Self {
         Self {
             base: BaseParser::new(),
             inner: Box::new(parser),
@@ -15,24 +15,24 @@ impl Till {
         }
     }
 }
-pub fn till(parser: Parser, match_end: bool) -> Parser {
+pub fn till<T: PI>(parser: Parser<T>, match_end: bool) -> Parser<T> {
     Parser::Till(Till::new(parser, match_end))
 }
 
-impl Clone for Till {
+impl<T: PI> Clone for Till<T> {
     fn clone(&self) -> Self {
         Till::new(*self.inner.clone(), self.match_finish)
     }
 }
 
-impl CharParser for Till {
-    fn take_char(&mut self, ch: &Char) -> Stat {
-        freshen!(self, ch);
-        match self.inner.take_char(ch) {
+impl<T: PI> ItemParser<T> for Till<T> {
+    fn take(&mut self, item: &IterItem<T>) -> Stat {
+        freshen!(self, item);
+        match self.inner.take(item) {
             Stat::Running => {}
-            Stat::Matched(byte) => {
+            Stat::Matched(end) => {
                 self.base.add_tokens(self.inner.take_tokens());
-                self.base.stat = Stat::Matched(byte)
+                self.base.stat = Stat::Matched(end)
             }
             Stat::Failed => {
                 self.inner.reset();
@@ -41,15 +41,15 @@ impl CharParser for Till {
         self.base.stat
     }
 
-    fn finish(&mut self, ch: &Char) -> Stat {
-        match self.inner.finish(ch) {
-            Stat::Matched(byte) => {
+    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+        match self.inner.finish(item) {
+            Stat::Matched(end) => {
                 self.base.add_tokens(self.inner.take_tokens());
-                self.base.stat = Stat::Matched(byte);
+                self.base.stat = Stat::Matched(end);
             }
             _ => {
                 if self.match_finish {
-                    self.base.stat = Stat::Matched(ch.next_byte());
+                    self.base.stat = Stat::Matched(item.index() + 1);
                 } else {
                     self.base.stat = Stat::Failed;
                 }

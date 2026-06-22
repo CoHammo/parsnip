@@ -116,9 +116,9 @@
 
 #[macro_export]
 macro_rules! freshen {
-    ($self:ident, $ch:expr $(, $more:expr )?) => {
+    ($self:ident, $item:expr $(, $more:expr )?) => {
         if $self.base.fresh {
-            $self.base.start_byte = $ch.byte;
+            $self.base.start = $item.index();
             $( $more )?
             $self.base.fresh = false;
         }
@@ -128,15 +128,15 @@ macro_rules! freshen {
 /// Macro for implementing the parser methods for a given set of parser variants.
 #[macro_export]
 macro_rules! parser_enum {
-    ($($variant:ident),*) => {
+    ($($variant:ident$(<$t:ident>)?),*) => {
         #[derive(Debug, Default)]
-        pub enum Parser {
+        pub enum Parser<T: PI> {
             #[default]
             Default,
-            $($variant($variant)),*
+            $($variant($variant$(<$t>)?)),*
         }
 
-        impl Parser {
+        impl<T: PI> Parser<T> {
             fn fresh(&self) -> bool {
                 match self {
                     Self::Default => false,
@@ -144,10 +144,10 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn start_byte(&self) -> usize {
+            fn start(&self) -> usize {
                 match self {
                     Self::Default => 0,
-                    $(Self::$variant(p) => p.base.start_byte,)*
+                    $(Self::$variant(p) => p.base.start,)*
                 }
             }
 
@@ -158,19 +158,19 @@ macro_rules! parser_enum {
                 }
             }
 
-            pub fn parse(&mut self, text: &Text, range: impl RangeBounds<usize>) -> Stat {
+            pub fn parse(&mut self, things: &impl ToParseIter<T>, range: impl RangeBounds<usize>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
-                        let mut chars = text.chars(range);
-                        while let Some(ch) = chars.next() {
-                            match p.take_char(&ch) {
+                        let mut items = things.to_iter(range);
+                        while let Some(ch) = items.next() {
+                            match p.take(&ch) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.base.stat {
-                            Stat::Running => p.finish(&chars.char),
+                            Stat::Running => p.finish(&items.item()),
                             _ => p.base.stat,
                         }
                     },)*
@@ -184,17 +184,17 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn take_char(&mut self, chars: &Char) -> Stat {
+            fn take(&mut self, byte: &IterItem<T>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => p.take_char(chars),)*
+                    $(Self::$variant(p) => p.take(byte),)*
                 }
             }
 
-            fn finish(&mut self, ch: &Char) -> Stat {
+            fn finish(&mut self, byte: &IterItem<T>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
-                    $(Self::$variant(p) => p.finish(ch),)*
+                    $(Self::$variant(p) => p.finish(byte),)*
                 }
             }
 
@@ -213,7 +213,7 @@ macro_rules! parser_enum {
             }
         }
 
-        impl Clone for Parser {
+        impl<T: PI> Clone for Parser<T> {
             fn clone(&self) -> Self {
                 match self {
                     Self::Default => Self::Default,

@@ -30,7 +30,7 @@ pub enum Stat {
 #[derive(Debug)]
 pub struct BaseParser {
     pub stat: Stat,
-    pub start_byte: usize,
+    pub start: usize,
     pub fresh: bool,
     pub tokens: Option<Vec<Token>>,
 }
@@ -38,7 +38,7 @@ impl BaseParser {
     pub fn new() -> Self {
         Self {
             stat: Stat::Running,
-            start_byte: 0,
+            start: 0,
             fresh: true,
             tokens: None,
         }
@@ -56,7 +56,7 @@ impl BaseParser {
 
     pub fn reset(&mut self) {
         self.stat = Stat::Running;
-        self.start_byte = 0;
+        self.start = 0;
         self.fresh = true;
         self.tokens = None;
     }
@@ -69,4 +69,27 @@ pub trait CharParser {
     fn string(&self) -> String;
 }
 
-parser_enum!(Dbg, Str, Tok, Not, Run, Rep, Till, Alt);
+pub trait ItemParser<T: PI> {
+    fn take(&mut self, item: &IterItem<T>) -> Stat;
+    fn finish(&mut self, item: &IterItem<T>) -> Stat;
+    fn reset(&mut self);
+    fn string(&self) -> String;
+}
+
+pub trait ByteParser {
+    fn take(&mut self, byte: &Byte) -> Stat;
+    fn finish(&mut self, byte: &Byte) -> Stat;
+    fn reset(&mut self);
+    fn string(&self) -> String;
+}
+
+parser_enum!(
+    Dbg<T>,
+    It<T>,
+    Tok<T>,
+    Not<T>,
+    Run<T>,
+    Rep<T>,
+    Till<T>,
+    Alt<T>
+);
