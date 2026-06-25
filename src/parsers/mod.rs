@@ -1,5 +1,6 @@
 mod alt;
 mod dbg;
+// mod gen_parsers;
 mod not;
 mod rec;
 mod rep;
@@ -62,34 +63,48 @@ impl BaseParser {
     }
 }
 
-pub trait CharParser {
-    fn take_char(&mut self, ch: &Char) -> Stat;
-    fn finish(&mut self, ch: &Char) -> Stat;
+impl Clone for BaseParser {
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+// pub trait CharParser {
+//     fn take_char(&mut self, ch: &Char) -> Stat;
+//     fn finish(&mut self, ch: &Char) -> Stat;
+//     fn reset(&mut self);
+//     fn string(&self) -> String;
+// }
+
+// pub trait ItemParser<T: PItem> {
+//     fn take(&mut self, item: &ParseItem<T>) -> Stat;
+//     fn finish(&mut self, item: &ParseItem<T>) -> Stat;
+//     fn reset(&mut self);
+//     fn string(&self) -> String;
+// }
+
+pub trait ItemParser<T: PItem>: Clone {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
 }
 
-pub trait ItemParser<T: PI> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat;
-    fn finish(&mut self, item: &IterItem<T>) -> Stat;
+pub trait ItemParser2<T: PItem>: Clone {
+    fn fresh(&self) -> bool;
+    fn start(&self) -> usize;
+    fn take_tokens(&mut self) -> Option<Vec<Token>>;
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
 }
 
-pub trait ByteParser {
-    fn take(&mut self, byte: &Byte) -> Stat;
-    fn finish(&mut self, byte: &Byte) -> Stat;
-    fn reset(&mut self);
-    fn string(&self) -> String;
-}
+// pub trait ByteParser {
+//     fn take(&mut self, byte: &Byte) -> Stat;
+//     fn finish(&mut self, byte: &Byte) -> Stat;
+//     fn reset(&mut self);
+//     fn string(&self) -> String;
+// }
 
-parser_enum!(
-    Dbg<T>,
-    It<T>,
-    Tok<T>,
-    Not<T>,
-    Run<T>,
-    Rep<T>,
-    Till<T>,
-    Alt<T>
-);
+parser_enum!(Dbg, It, Tok, Not, Run, Rep, Till, Alt);

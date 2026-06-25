@@ -1,11 +1,11 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Alt<T: PI> {
+pub struct Alt<T: PItem> {
     pub base: BaseParser,
     inners: Box<[(bool, Parser<T>)]>,
 }
-impl<T: PI> Alt<T> {
+impl<T: PItem> Alt<T> {
     pub fn new(parsers: Vec<Parser<T>>) -> Self {
         Self {
             base: BaseParser::new(),
@@ -13,11 +13,11 @@ impl<T: PI> Alt<T> {
         }
     }
 }
-pub fn alt<T: PI>(parsers: Vec<Parser<T>>) -> Parser<T> {
+pub fn alt<T: PItem>(parsers: Vec<Parser<T>>) -> Parser<T> {
     Parser::Alt(Alt::new(parsers))
 }
 
-impl<T: PI> Clone for Alt<T> {
+impl<T: PItem> Clone for Alt<T> {
     fn clone(&self) -> Self {
         Self {
             base: BaseParser::new(),
@@ -26,8 +26,8 @@ impl<T: PI> Clone for Alt<T> {
     }
 }
 
-impl<T: PI> ItemParser<T> for Alt<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Alt<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         freshen!(self, item);
         let mut running = false;
         for parser in &mut self.inners {
@@ -52,7 +52,7 @@ impl<T: PI> ItemParser<T> for Alt<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         for parser in &mut self.inners {
             if parser.0 {
                 match parser.1.finish(item) {

@@ -1,12 +1,12 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Till<T: PI> {
+pub struct Till<T: PItem> {
     pub base: BaseParser,
     inner: Box<Parser<T>>,
     match_finish: bool,
 }
-impl<T: PI> Till<T> {
+impl<T: PItem> Till<T> {
     pub fn new(parser: Parser<T>, match_end: bool) -> Self {
         Self {
             base: BaseParser::new(),
@@ -15,18 +15,18 @@ impl<T: PI> Till<T> {
         }
     }
 }
-pub fn till<T: PI>(parser: Parser<T>, match_end: bool) -> Parser<T> {
+pub fn till<T: PItem>(parser: Parser<T>, match_end: bool) -> Parser<T> {
     Parser::Till(Till::new(parser, match_end))
 }
 
-impl<T: PI> Clone for Till<T> {
+impl<T: PItem> Clone for Till<T> {
     fn clone(&self) -> Self {
         Till::new(*self.inner.clone(), self.match_finish)
     }
 }
 
-impl<T: PI> ItemParser<T> for Till<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Till<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         freshen!(self, item);
         match self.inner.take(item) {
             Stat::Running => {}
@@ -41,7 +41,7 @@ impl<T: PI> ItemParser<T> for Till<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         match self.inner.finish(item) {
             Stat::Matched(end) => {
                 self.base.add_tokens(self.inner.take_tokens());

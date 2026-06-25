@@ -1,12 +1,12 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Not<T: PI> {
+pub struct Not<T: PItem> {
     pub base: BaseParser,
     inner: Box<Parser<T>>,
 }
 
-impl<T: PI> Not<T> {
+impl<T: PItem> Not<T> {
     pub fn new(parser: Parser<T>) -> Self {
         Self {
             base: BaseParser::new(),
@@ -14,7 +14,7 @@ impl<T: PI> Not<T> {
         }
     }
 
-    fn look(&mut self, item: &IterItem<T>) {
+    fn look<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) {
         let mut peeks = item.peeks();
         while let Some(it) = peeks.next() {
             match self.inner.take(&it) {
@@ -32,21 +32,21 @@ impl<T: PI> Not<T> {
     }
 }
 
-impl<T: PI> Clone for Not<T> {
+impl<T: PItem> Clone for Not<T> {
     fn clone(&self) -> Self {
         Not::new(*self.inner.clone())
     }
 }
 
-impl<T: PI> ItemParser<T> for Not<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Not<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         freshen!(self, item, {
             self.look(item);
         });
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         match self.inner.finish(item) {
             Stat::Matched(_) => self.base.stat = Stat::Failed,
             _ => self.base.stat = Stat::Matched(item.index()),

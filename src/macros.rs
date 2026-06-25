@@ -128,15 +128,15 @@ macro_rules! freshen {
 /// Macro for implementing the parser methods for a given set of parser variants.
 #[macro_export]
 macro_rules! parser_enum {
-    ($($variant:ident$(<$t:ident>)?),*) => {
-        #[derive(Debug, Default)]
-        pub enum Parser<T: PI> {
+    ($($variant:ident),*) => {
+        #[derive(Debug, Default, Clone)]
+        pub enum Parser<T: PItem> {
             #[default]
             Default,
-            $($variant($variant$(<$t>)?)),*
+            $($variant($variant<T>)),*
         }
 
-        impl<T: PI> Parser<T> {
+        impl<T: PItem> Parser<T> {
             fn fresh(&self) -> bool {
                 match self {
                     Self::Default => false,
@@ -158,19 +158,19 @@ macro_rules! parser_enum {
                 }
             }
 
-            pub fn parse(&mut self, things: &impl ToParseIter<T>, range: impl RangeBounds<usize>) -> Stat {
+            pub fn parse(&mut self, parses: &impl Parses<T>, range: impl RangeBounds<usize>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {
-                        let mut items = things.to_iter(range);
-                        while let Some(ch) = items.next() {
-                            match p.take(&ch) {
+                        let mut iter = parses.to_parse_iter(range);
+                        while let Some(item) = iter.next() {
+                            match p.take(&item) {
                                 Stat::Matched(_) | Stat::Failed => break,
                                 _ => {},
                             }
                         }
                         return match p.base.stat {
-                            Stat::Running => p.finish(&items.item()),
+                            Stat::Running => p.finish(&iter.item()),
                             _ => p.base.stat,
                         }
                     },)*
@@ -184,14 +184,14 @@ macro_rules! parser_enum {
                 }
             }
 
-            fn take(&mut self, byte: &IterItem<T>) -> Stat {
+            fn take<I: Iterator<Item = T> + Clone>(&mut self, byte: &ParseItem<T, I>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => p.take(byte),)*
                 }
             }
 
-            fn finish(&mut self, byte: &IterItem<T>) -> Stat {
+            fn finish<I: Iterator<Item = T> + Clone>(&mut self, byte: &ParseItem<T, I>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => p.finish(byte),)*
@@ -213,13 +213,13 @@ macro_rules! parser_enum {
             }
         }
 
-        impl<T: PI> Clone for Parser<T> {
-            fn clone(&self) -> Self {
-                match self {
-                    Self::Default => Self::Default,
-                    $(Self::$variant(p) => Self::$variant(p.clone()),)*
-                }
-            }
-        }
+        // impl<T: Pit> Clone for Parser<T> {
+        //     fn clone(&self) -> Self {
+        //         match self {
+        //             Self::Default => Self::Default,
+        //             $(Self::$variant(p) => Self::$variant(p.clone()),)*
+        //         }
+        //     }
+        // }
     };
 }

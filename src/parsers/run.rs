@@ -1,14 +1,14 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Run<T: PI> {
+pub struct Run<T: PItem> {
     pub base: BaseParser,
     inners: Box<[Parser<T>]>,
     len: usize,
     index: usize,
     check_at_index: usize,
 }
-impl<T: PI> Run<T> {
+impl<T: PItem> Run<T> {
     pub fn new(parsers: Vec<Parser<T>>) -> Self {
         let len = parsers.len();
         Self {
@@ -20,11 +20,11 @@ impl<T: PI> Run<T> {
         }
     }
 }
-pub fn run<T: PI>(parsers: Vec<Parser<T>>) -> Parser<T> {
+pub fn run<T: PItem>(parsers: Vec<Parser<T>>) -> Parser<T> {
     Parser::Run(Run::new(parsers))
 }
 
-impl<T: PI> Clone for Run<T> {
+impl<T: PItem> Clone for Run<T> {
     fn clone(&self) -> Self {
         Self {
             base: BaseParser::new(),
@@ -36,8 +36,8 @@ impl<T: PI> Clone for Run<T> {
     }
 }
 
-impl<T: PI> ItemParser<T> for Run<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Run<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         if item.index() >= self.check_at_index {
             freshen!(self, item);
             let parser = &mut self.inners[self.index];
@@ -62,7 +62,7 @@ impl<T: PI> ItemParser<T> for Run<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         let parser = &mut self.inners[self.index];
         match parser.finish(item) {
             Stat::Matched(end) => {

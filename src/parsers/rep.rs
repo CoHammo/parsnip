@@ -2,7 +2,7 @@ use super::super::*;
 use std::ops::{Bound::*, RangeBounds};
 
 #[derive(Debug)]
-pub struct Rep<T: PI> {
+pub struct Rep<T: PItem> {
     pub base: BaseParser,
     inner: Box<Parser<T>>,
     min: usize,
@@ -10,7 +10,7 @@ pub struct Rep<T: PI> {
     count: usize,
     end: usize,
 }
-impl<T: PI> Rep<T> {
+impl<T: PItem> Rep<T> {
     pub fn new(parser: Parser<T>, range: impl RangeBounds<usize>) -> Self {
         let min = match range.start_bound() {
             Included(&m) | Excluded(&m) => match m {
@@ -47,18 +47,18 @@ impl<T: PI> Rep<T> {
         }
     }
 }
-pub fn rep<T: PI>(parser: Parser<T>, range: impl RangeBounds<usize>) -> Parser<T> {
+pub fn rep<T: PItem>(parser: Parser<T>, range: impl RangeBounds<usize>) -> Parser<T> {
     Parser::Rep(Rep::new(parser, range))
 }
 
-impl<T: PI> Clone for Rep<T> {
+impl<T: PItem> Clone for Rep<T> {
     fn clone(&self) -> Self {
         Rep::new(*self.inner.clone(), self.min..=self.max)
     }
 }
 
-impl<T: PI> Rep<T> {
-    fn look(&mut self, ch: &IterItem<T>) {
+impl<T: PItem> Rep<T> {
+    fn look<I: Iterator<Item = T> + Clone>(&mut self, ch: &ParseItem<T, I>) {
         let mut peeks = ch.peeks();
         while let Some(it) = peeks.next() {
             match self.inner.take(&it) {
@@ -88,8 +88,8 @@ impl<T: PI> Rep<T> {
     }
 }
 
-impl<T: PI> ItemParser<T> for Rep<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Rep<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         freshen!(self, item, {
             self.look(item);
         });
@@ -118,7 +118,7 @@ impl<T: PI> ItemParser<T> for Rep<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         if !self.inner.fresh() {
             match self.inner.finish(item) {
                 Stat::Matched(end) => {

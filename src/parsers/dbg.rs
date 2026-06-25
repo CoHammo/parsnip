@@ -1,11 +1,11 @@
 use super::super::*;
 
 #[derive(Debug)]
-pub struct Dbg<T: PI> {
+pub struct Dbg<T: PItem> {
     pub base: BaseParser,
     inner: Box<Parser<T>>,
 }
-impl<T: PI> Dbg<T> {
+impl<T: PItem> Dbg<T> {
     pub fn new(parser: Parser<T>) -> Self {
         Self {
             base: BaseParser::new(),
@@ -13,11 +13,11 @@ impl<T: PI> Dbg<T> {
         }
     }
 }
-pub fn dbg<T: PI>(parser: Parser<T>) -> Parser<T> {
+pub fn dbg<T: PItem>(parser: Parser<T>) -> Parser<T> {
     Parser::Dbg(Dbg::new(parser))
 }
 
-impl<T: PI> Clone for Dbg<T> {
+impl<T: PItem> Clone for Dbg<T> {
     fn clone(&self) -> Self {
         Self {
             base: BaseParser::new(),
@@ -26,8 +26,8 @@ impl<T: PI> Clone for Dbg<T> {
     }
 }
 
-impl<T: PI> ItemParser<T> for Dbg<T> {
-    fn take(&mut self, item: &IterItem<T>) -> Stat {
+impl<T: PItem> ItemParser<T> for Dbg<T> {
+    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         freshen!(self, item);
         self.base.stat = self.inner.take(item);
         println!(
@@ -40,7 +40,7 @@ impl<T: PI> ItemParser<T> for Dbg<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, item: &IterItem<T>) -> Stat {
+    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat {
         self.base.stat = self.inner.finish(item);
         println!(
             "Finish {}: item={:?}, index={}, stat={:?}",
