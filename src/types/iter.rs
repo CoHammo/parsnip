@@ -1,84 +1,10 @@
-use std::{
-    ops::{Bound::*, RangeBounds},
-    str::{Bytes, CharIndices},
-};
+use super::*;
+use std::ops::{Bound::*, RangeBounds};
 
-pub trait PItem: Default + Clone + std::fmt::Debug {
-    fn from_iter(&self) -> Self;
-    fn matches(&self, other: &Self) -> bool;
-}
-
-pub trait Parses<T: PItem> {
-    type Iter<'a>: Iterator<Item = T> + Clone
-    where
-        Self: 'a;
-    fn to_parse_iter<'a>(&'a self, range: impl RangeBounds<usize>) -> ParseIter<T, Self::Iter<'a>>;
-    fn to_inner_store(&self) -> Box<[T]>;
-}
-
-impl PItem for u8 {
-    fn from_iter(&self) -> u8 {
-        *self
-    }
-    fn matches(&self, other: &u8) -> bool {
-        self == other
-    }
-}
-
-impl Parses<u8> for &str {
-    type Iter<'a>
-        = Bytes<'a>
-    where
-        Self: 'a;
-    fn to_parse_iter(&self, range: impl RangeBounds<usize>) -> ParseIter<u8, Self::Iter<'_>> {
-        ParseIter::new(self.bytes(), self.len(), range)
-    }
-
-    fn to_inner_store(&self) -> Box<[u8]> {
-        self.as_bytes().into()
-    }
-}
-
-impl PItem for (usize, char) {
-    fn from_iter(&self) -> (usize, char) {
-        *self
-    }
-    fn matches(&self, other: &(usize, char)) -> bool {
-        self.1 == other.1
-    }
-}
-
-impl Parses<(usize, char)> for &str {
-    type Iter<'a>
-        = CharIndices<'a>
-    where
-        Self: 'a;
-    fn to_parse_iter(
-        &self,
-        range: impl RangeBounds<usize>,
-    ) -> ParseIter<(usize, char), Self::Iter<'_>> {
-        ParseIter::new(self.char_indices(), self.len(), range)
-    }
-
-    fn to_inner_store(&self) -> Box<[(usize, char)]> {
-        self.char_indices().collect()
-    }
-}
-
-#[derive(Debug)]
-pub struct ParseItem<'a, T: PItem, I: Iterator<Item = T> + Clone> {
-    pub value: T,
-    parse_iter: &'a ParseIter<T, I>,
-}
-
-impl<'a, T: PItem, I: Iterator<Item = T> + Clone> ParseItem<'a, T, I> {
-    pub fn index(&self) -> usize {
-        self.parse_iter.index
-    }
-
-    pub fn peeks(&self) -> ParseIter<T, I> {
-        self.parse_iter.clone()
-    }
+pub struct Item<S, V: PartialEq> {
+    source: S,
+    pub value: V,
+    pub index: usize,
 }
 
 #[derive(Debug)]
@@ -140,7 +66,7 @@ impl<'a, T: PItem, I: Iterator<Item = T> + Clone + 'a> ParseIter<T, I> {
                 Some(self.item())
             } else if let Some(item) = self.iter.next() {
                 self.index += 1;
-                self.item = item;
+                self.item = item.from_iter();
                 Some(self.item())
             } else {
                 None

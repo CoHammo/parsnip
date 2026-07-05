@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use super::super::*;
 
 #[derive(Debug)]
@@ -16,9 +14,6 @@ impl<T: PItem> Tok<T> {
             tag,
         }
     }
-}
-pub fn tok<T: PItem>(parser: Parser<T>, tag: Tag) -> Parser<T> {
-    Parser::Tok(Tok::new(parser, tag))
 }
 
 impl<T: PItem> Clone for Tok<T> {
@@ -70,4 +65,8 @@ impl<T: PItem> ItemParser<T> for Tok<T> {
     fn string(&self) -> String {
         format!("Tok({})", self.inner.string())
     }
+}
+
+pub fn tok<T: PItem>(parser: Parser<T>, tag: Tag) -> Parser<T> {
+    Parser::Tok(Tok::new(parser, tag))
 }

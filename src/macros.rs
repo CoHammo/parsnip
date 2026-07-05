@@ -115,6 +115,75 @@
 // }
 
 #[macro_export]
+macro_rules! dispatch {
+    ($name:ident) => {
+        impl<T: Matches + 'static> ParserDispatch<T> for $name<T> {
+            // fn get_base_fn(&self) -> fn(me: &mut dyn Any) -> &mut Base {
+            //     fn func<I: Matches + 'static>(me: &mut dyn Any) -> &mut Base {
+            //         unsafe {
+            //             let ptr = &mut *(me as *mut dyn Any as *mut $name<I>);
+            //             ptr.base()
+            //         }
+            //     }
+            //     func::<T>
+            // }
+
+            fn get_snip_fn(
+                &self,
+            ) -> fn(base: *mut ParserWrap<T>, me: &mut dyn Any, snip: &Snip<T>) {
+                fn func<I: Matches + 'static>(
+                    base: *mut ParserWrap<I>,
+                    me: &mut dyn Any,
+                    snip: &Snip<I>,
+                ) {
+                    unsafe {
+                        let ptr = &mut *(me as *mut dyn Any as *mut $name<I>);
+                        ptr.snip(&mut *base, snip)
+                    }
+                }
+                func::<T>
+            }
+
+            fn get_finish_fn(
+                &self,
+            ) -> fn(base: *mut ParserWrap<T>, me: &mut dyn Any, snip: &Snip<T>) {
+                fn func<I: Matches + 'static>(
+                    base: *mut ParserWrap<I>,
+                    me: &mut dyn Any,
+                    snip: &Snip<I>,
+                ) {
+                    unsafe {
+                        let ptr = &mut *(me as *mut dyn Any as *mut $name<I>);
+                        ptr.finish(&mut *base, snip)
+                    }
+                }
+                func::<T>
+            }
+
+            fn get_reset_fn(&self) -> fn(me: &mut dyn Any) {
+                fn func<I: Matches + 'static>(me: &mut dyn Any) {
+                    unsafe {
+                        let ptr = &mut *(me as *mut dyn Any as *mut $name<I>);
+                        ptr.reset()
+                    }
+                }
+                func::<T>
+            }
+
+            fn get_string_fn(&self) -> fn(me: &dyn Any) -> String {
+                fn func<I: Matches + 'static>(me: &dyn Any) -> String {
+                    unsafe {
+                        let p = &*(me as *const dyn Any as *const $name<I>);
+                        p.string()
+                    }
+                }
+                func::<T>
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! freshen {
     ($self:ident, $item:expr $(, $more:expr )?) => {
         if $self.base.fresh {

@@ -20,9 +20,6 @@ impl<T: PItem> Run<T> {
         }
     }
 }
-pub fn run<T: PItem>(parsers: Vec<Parser<T>>) -> Parser<T> {
-    Parser::Run(Run::new(parsers))
-}
 
 impl<T: PItem> Clone for Run<T> {
     fn clone(&self) -> Self {
@@ -101,4 +98,8 @@ impl<T: PItem> ItemParser<T> for Run<T> {
                 .join(", ")
         )
     }
+}
+
+pub fn run<T: PItem>(parsers: Vec<Parser<T>>) -> Parser<T> {
+    Parser::Run(Run::new(parsers))
 }

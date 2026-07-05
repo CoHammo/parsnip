@@ -6,10 +6,10 @@ pub struct Token {
     pub start: usize,
     pub end: usize,
     pub len: usize,
-    pub tokens: Option<Vec<Token>>,
+    pub tokens: Tokens,
 }
 impl Token {
-    pub fn new(tag: Tag, start: usize, end: usize, tokens: Option<Vec<Token>>) -> Self {
+    pub fn new(tag: Tag, start: usize, end: usize, tokens: Tokens) -> Self {
         return Self {
             tag,
             start,
@@ -19,3 +19,5 @@ impl Token {
         };
     }
 }
+
+pub type Tokens = Option<Vec<Token>>;

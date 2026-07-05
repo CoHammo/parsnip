@@ -1,6 +1,5 @@
 mod alt;
 mod dbg;
-// mod gen_parsers;
 mod not;
 mod rec;
 mod rep;
@@ -8,6 +7,7 @@ mod run;
 mod str;
 mod till;
 mod tok;
+pub mod trait_parsers;
 
 use super::*;
 pub use alt::*;
@@ -20,6 +20,7 @@ use std::ops::RangeBounds;
 pub use str::*;
 pub use till::*;
 pub use tok::*;
+pub use trait_parsers::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
@@ -33,7 +34,7 @@ pub struct BaseParser {
     pub stat: Stat,
     pub start: usize,
     pub fresh: bool,
-    pub tokens: Option<Vec<Token>>,
+    pub tokens: Tokens,
 }
 impl BaseParser {
     pub fn new() -> Self {
@@ -45,7 +46,7 @@ impl BaseParser {
         }
     }
 
-    pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
+    pub fn add_tokens(&mut self, tokens: Tokens) {
         if let Some(new_tokens) = tokens {
             if let Some(toks) = &mut self.tokens {
                 toks.extend(new_tokens);
@@ -69,42 +70,11 @@ impl Clone for BaseParser {
     }
 }
 
-// pub trait CharParser {
-//     fn take_char(&mut self, ch: &Char) -> Stat;
-//     fn finish(&mut self, ch: &Char) -> Stat;
-//     fn reset(&mut self);
-//     fn string(&self) -> String;
-// }
-
-// pub trait ItemParser<T: PItem> {
-//     fn take(&mut self, item: &ParseItem<T>) -> Stat;
-//     fn finish(&mut self, item: &ParseItem<T>) -> Stat;
-//     fn reset(&mut self);
-//     fn string(&self) -> String;
-// }
-
 pub trait ItemParser<T: PItem>: Clone {
     fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
     fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
 }
-
-pub trait ItemParser2<T: PItem>: Clone {
-    fn fresh(&self) -> bool;
-    fn start(&self) -> usize;
-    fn take_tokens(&mut self) -> Option<Vec<Token>>;
-    fn take<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
-    fn finish<I: Iterator<Item = T> + Clone>(&mut self, item: &ParseItem<T, I>) -> Stat;
-    fn reset(&mut self);
-    fn string(&self) -> String;
-}
-
-// pub trait ByteParser {
-//     fn take(&mut self, byte: &Byte) -> Stat;
-//     fn finish(&mut self, byte: &Byte) -> Stat;
-//     fn reset(&mut self);
-//     fn string(&self) -> String;
-// }
 
 parser_enum!(Dbg, It, Tok, Not, Run, Rep, Till, Alt);
