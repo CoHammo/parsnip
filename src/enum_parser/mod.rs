@@ -1,5 +1,6 @@
 mod alt;
 mod dbg;
+mod macros;
 mod not;
 mod rec;
 mod rep;
@@ -7,20 +8,19 @@ mod run;
 mod str;
 mod till;
 mod tok;
-pub mod trait_parsers;
 
-use super::*;
+use super::types::*;
 pub use alt::*;
 pub use dbg::*;
 pub use not::*;
 // pub use rec::*;
+use crate::{freshen, parser_enum};
 pub use rep::*;
 pub use run::*;
 use std::ops::RangeBounds;
 pub use str::*;
 pub use till::*;
 pub use tok::*;
-pub use trait_parsers::*;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Stat {
