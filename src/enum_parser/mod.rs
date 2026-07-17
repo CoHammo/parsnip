@@ -9,6 +9,8 @@ mod str;
 mod till;
 mod tok;
 
+mod tests;
+
 use super::types::*;
 pub use alt::*;
 pub use dbg::*;

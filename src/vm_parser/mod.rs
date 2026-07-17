@@ -38,9 +38,9 @@ impl Token {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Event {
-    pub start: bool,
+    pub opens: bool,
     pub index: usize,
     pub prev: Option<usize>,
 }
@@ -232,58 +232,64 @@ impl Loop {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Thread {
     pub ip: usize,
-    pub loops: Vec<Loop>,
-    pub calls: Vec<usize>,
-    pub event: Option<usize>,
+    pub loops: [Loop; 16],
+    pub lip: Option<usize>,
+    pub calls: [usize; 32],
+    pub cp: Option<usize>,
+    pub prev_event: Option<usize>,
 }
 impl Thread {
     pub fn new(ip: usize) -> Self {
         Self {
             ip,
-            loops: Vec::new(),
-            calls: Vec::new(),
-            event: None,
+            loops: [Loop::new(0, 0); 16],
+            lip: None,
+            calls: [0; 32],
+            cp: None,
+            prev_event: None,
         }
     }
 
-    pub fn from_parent(ip: usize, parent: &Thread) -> Self {
-        Self {
-            ip,
-            loops: parent.loops.clone(),
-            calls: parent.calls.clone(),
-            event: parent.event.clone(),
-        }
+    pub fn fork(&self, ip: usize) -> Self {
+        let mut thread = *self;
+        thread.ip = ip;
+        thread
     }
 
-    pub fn start_from(&mut self, ip: usize, parent: &Thread) {
-        self.ip = ip;
-        self.loops.extend_from_slice(&parent.loops);
-        self.calls.extend_from_slice(&parent.calls);
-        self.event = parent.event;
-    }
+    // pub fn from_parent(ip: usize, parent: &Thread) -> Self {
+    //     Self {
+    //         ip,
+    //         loops: parent.loops.clone(),
+    //         calls: parent.calls.clone(),
+    //         event: parent.event.clone(),
+    //     }
+    // }
 
-    pub fn kill(&mut self) {
-        self.ip = 0;
-        self.loops.clear();
-        self.calls.clear();
-        self.event = None;
-    }
+    // pub fn start_from(&mut self, ip: usize, parent: &Thread) {
+    //     self.ip = ip;
+    //     self.loops.extend_from_slice(&parent.loops);
+    //     self.calls.extend_from_slice(&parent.calls);
+    //     self.event = parent.event;
+    // }
+
+    // pub fn kill(&mut self) {
+    //     self.ip = 0;
+    //     self.loops.clear();
+    //     self.calls.clear();
+    //     self.event = None;
+    // }
 }
 
 pub struct Parser<T: Matches> {
     stat: Stat,
     pub comms: Vec<Comm<T>>,
     pub threads: Vec<Thread>,
-    pub free: Vec<usize>,
-    pub active: Vec<usize>,
-    pub next: Vec<usize>,
+    pub next: Vec<Thread>,
     pub matches: Vec<Option<usize>>,
     pub events: Vec<Event>,
-    // toks: Vec<Token>,
-    // pub tokens: Vec<Token>,
 }
 
 impl<T: Matches> Parser<T> {
@@ -293,27 +299,10 @@ impl<T: Matches> Parser<T> {
             stat: Stat::Running,
             comms,
             threads: vec![Thread::new(0)],
-            free: Vec::new(),
-            active: vec![0],
-            next: Vec::new(),
-            matches: Vec::new(),
-            events: Vec::new(),
-            // toks: Vec::new(),
-            // tokens: Vec::new(),
+            next: Vec::with_capacity(1),
+            matches: Vec::with_capacity(2),
+            events: Vec::with_capacity(8),
         }
-    }
-
-    pub fn add_thread(&mut self, parent: &Thread, ip: usize) {
-        if let Some(tp) = self.free.pop() {
-            self.threads[tp].start_from(ip, parent);
-        } else {
-            self.threads.push(Thread::from_parent(ip, parent));
-        }
-    }
-
-    pub fn kill_thread(&mut self, thread_index: usize, thread: &mut Thread) {
-        thread.kill();
-        self.free.push(thread_index);
     }
 
     pub fn parse<I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Stat {
@@ -329,10 +318,9 @@ impl<T: Matches> Parser<T> {
     }
 
     pub fn take_snip<I: SnipIter<T>>(&mut self, snip: &Snip<T, I>) -> Stat {
-        let mut active_index = 0;
-        while active_index < self.active.len() {
-            let thread_index = self.active[active_index];
-            let thread = &mut self.threads[thread_index];
+        let mut thread_index = 0;
+        while thread_index < self.threads.len() {
+            let mut thread = self.threads[thread_index];
 
             loop {
                 // println!(
@@ -341,54 +329,67 @@ impl<T: Matches> Parser<T> {
                 // );
                 match &self.comms[thread.ip] {
                     Comm::Matched => {
-                        self.matches.push(thread.event);
-                        thread.kill();
-                        self.free.push(thread_index);
+                        self.matches.push(thread.prev_event);
                         break;
                     }
                     Comm::Match(thing) => {
                         if !snip.end && thing.matches(&snip.value) {
                             thread.ip += 1;
-                            self.next.push(thread_index);
+                            self.next.push(thread);
                             break;
-                        } else if let Some(loo) = thread.loops.last_mut() {
+                        } else if let Some(lip) = thread.lip {
+                            let loo = &mut thread.loops[lip];
                             loo.broken = true;
                             thread.ip = loo.end;
                         } else {
-                            thread.kill();
-                            self.free.push(thread_index);
                             break;
                         }
                     }
-                    &Comm::Tok(open) => {
+                    &Comm::Tok(opens) => {
                         let event = Event {
-                            start: open,
+                            opens,
                             index: snip.index,
-                            prev: thread.event,
+                            prev: thread.prev_event,
                         };
+                        thread.prev_event = Some(self.events.len());
                         self.events.push(event);
-                        thread.event = Some(self.events.len() - 1);
                         thread.ip += 1;
                     }
                     &Comm::StartLoop(len) => {
-                        thread.loops.push(Loop::new(thread.ip + 1, len + 1));
+                        let lip = if let Some(l) = thread.lip {
+                            if l == 15 {
+                                panic!("Loop stack overflow");
+                            } else {
+                                l + 1
+                            }
+                        } else {
+                            0
+                        };
+                        thread.loops[lip].start(thread.ip + 1, len + 1);
                         thread.ip += 1;
                     }
                     &Comm::CloseLoop(min, max) => {
-                        if let Some(loo) = thread.loops.last_mut() {
+                        if let Some(lip) = thread.lip {
+                            let loo = &mut thread.loops[lip];
                             if loo.broken {
                                 if loo.count >= min {
-                                    thread.loops.pop();
+                                    loo.reset();
+                                    match lip {
+                                        0 => thread.lip = None,
+                                        _ => thread.lip = Some(lip - 1),
+                                    }
                                     thread.ip += 1;
                                 } else {
-                                    thread.kill();
-                                    self.free.push(thread_index);
                                     break;
                                 }
                             } else {
                                 loo.count += 1;
                                 if loo.count == max {
-                                    thread.loops.pop();
+                                    loo.reset();
+                                    match lip {
+                                        0 => thread.lip = None,
+                                        _ => thread.lip = Some(lip - 1),
+                                    }
                                     thread.ip += 1;
                                 } else {
                                     thread.ip = loo.start;
@@ -403,10 +404,10 @@ impl<T: Matches> Parser<T> {
                 }
             } // End of Command Loop
 
-            active_index += 1;
+            thread_index += 1;
         }
 
-        self.active.clear();
+        self.threads.clear();
         if self.next.is_empty() {
             if self.matches.is_empty() {
                 self.stat = Stat::Failed;
@@ -414,7 +415,7 @@ impl<T: Matches> Parser<T> {
                 self.stat = Stat::Matched;
             }
         } else {
-            std::mem::swap(&mut self.next, &mut self.active);
+            std::mem::swap(&mut self.threads, &mut self.next);
         }
         self.stat
     }
