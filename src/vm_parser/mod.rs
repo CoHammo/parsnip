@@ -205,30 +205,20 @@ pub enum Comm<T: Matches> {
 #[derive(Debug, Clone, Copy)]
 pub struct Loop {
     pub start: usize,
-    pub end: usize,
     pub count: usize,
-    pub broken: bool,
 }
 impl Loop {
-    pub fn new(start: usize, end: usize) -> Self {
-        Self {
-            start,
-            end,
-            count: 0,
-            broken: false,
-        }
+    pub fn new(start: usize) -> Self {
+        Self { start, count: 0 }
     }
 
-    pub fn start(&mut self, start: usize, end: usize) {
+    pub fn start(&mut self, start: usize) {
         self.start = start;
-        self.end = end;
     }
 
     pub fn reset(&mut self) {
         self.start = 0;
-        self.end = 0;
         self.count = 0;
-        self.broken = false;
     }
 }
 
@@ -245,7 +235,7 @@ impl Thread {
     pub fn new(ip: usize) -> Self {
         Self {
             ip,
-            loops: [Loop::new(0, 0); 16],
+            loops: [Loop::new(0); 16],
             lip: None,
             calls: [0; 32],
             cp: None,
@@ -257,6 +247,14 @@ impl Thread {
         let mut thread = *self;
         thread.ip = ip;
         thread
+    }
+
+    pub fn unloop(&mut self, lip: usize) {
+        self.loops[lip].reset();
+        match lip {
+            0 => self.lip = None,
+            _ => self.lip = Some(lip - 1),
+        }
     }
 
     // pub fn from_parent(ip: usize, parent: &Thread) -> Self {
@@ -337,10 +335,6 @@ impl<T: Matches> Parser<T> {
                             thread.ip += 1;
                             self.next.push(thread);
                             break;
-                        } else if let Some(lip) = thread.lip {
-                            let loo = &mut thread.loops[lip];
-                            loo.broken = true;
-                            thread.ip = loo.end;
                         } else {
                             break;
                         }
@@ -365,35 +359,25 @@ impl<T: Matches> Parser<T> {
                         } else {
                             0
                         };
-                        thread.loops[lip].start(thread.ip + 1, len + 1);
+                        thread.lip = Some(lip);
+                        thread.loops[lip].start(thread.ip + 1);
                         thread.ip += 1;
                     }
                     &Comm::CloseLoop(min, max) => {
                         if let Some(lip) = thread.lip {
                             let loo = &mut thread.loops[lip];
-                            if loo.broken {
-                                if loo.count >= min {
-                                    loo.reset();
-                                    match lip {
-                                        0 => thread.lip = None,
-                                        _ => thread.lip = Some(lip - 1),
-                                    }
-                                    thread.ip += 1;
-                                } else {
-                                    break;
-                                }
+                            loo.count += 1;
+                            if loo.count == max {
+                                thread.unloop(lip);
+                                thread.ip += 1;
                             } else {
-                                loo.count += 1;
-                                if loo.count == max {
-                                    loo.reset();
-                                    match lip {
-                                        0 => thread.lip = None,
-                                        _ => thread.lip = Some(lip - 1),
-                                    }
-                                    thread.ip += 1;
-                                } else {
-                                    thread.ip = loo.start;
+                                let loop_start = loo.start;
+                                if loo.count >= min {
+                                    let mut after = thread.fork(thread.ip + 1);
+                                    after.unloop(lip);
+                                    self.threads.push(after);
                                 }
+                                thread.ip = loop_start;
                             }
                         } else {
                             println!("Tried to close a loop with no start");
