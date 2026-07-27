@@ -5,18 +5,21 @@ use std::time::Instant;
 #[test]
 fn test_traits() {
     let mut parser = Parser::new(tok(
-        chain(&[
-            &tok(str("Hello "), Tags::none()),
-            &tok(str("World!\n"), Tags::none()),
-        ]),
+        rep(tok(str("Hello Man\n"), Tags::none()), 1, 0),
         Tags::none(),
     ));
-    // let mut parser = tokker(str("Hello World!\n"), Tags::none());
-    let source = "Hello World!\n";
+    // let mut parser = Parser::new(rep(
+    //     chain(&[
+    //         &tok(str("Hello "), Tags::none()),
+    //         &tok(str("Man\n"), Tags::none()),
+    //     ]),
+    //     1,
+    //     0,
+    // ));
+    let source = "Hello Man\n".repeat(2);
 
     let start = Instant::now();
-    let res = parser.parse(&source);
-    // let tree = Node::new(&source, &parser.inner.base().events.take());
+    let res = parser.parse(&source.as_str());
     let duration = start.elapsed();
 
     println!("{:#?}", parser.events);

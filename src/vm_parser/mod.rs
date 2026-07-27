@@ -1,10 +1,12 @@
 mod tests;
 
 use std::{
+    cell::{Cell, RefCell},
     ops::{
         Bound::{Excluded, Included, Unbounded},
         RangeBounds,
     },
+    rc::Rc,
     str::Bytes,
 };
 
@@ -198,7 +200,7 @@ pub enum Comm<T: Matches> {
     Matched,
     Match(T),
     Tok(bool),
-    StartLoop(usize),
+    StartLoop,
     CloseLoop(usize, usize),
 }
 
@@ -225,28 +227,33 @@ impl Loop {
 #[derive(Debug, Clone, Copy)]
 pub struct Thread {
     pub ip: usize,
-    pub loops: [Loop; 16],
+    pub loops: [Loop; 4],
     pub lip: Option<usize>,
-    pub calls: [usize; 32],
-    pub cp: Option<usize>,
+    // pub calls: [usize; 24],
+    // pub cp: Option<usize>,
     pub prev_event: Option<usize>,
 }
 impl Thread {
     pub fn new(ip: usize) -> Self {
         Self {
             ip,
-            loops: [Loop::new(0); 16],
+            loops: [Loop::new(0); 4],
             lip: None,
-            calls: [0; 32],
-            cp: None,
+            // calls: [0; 24],
+            // cp: None,
             prev_event: None,
         }
     }
 
     pub fn fork(&self, ip: usize) -> Self {
-        let mut thread = *self;
-        thread.ip = ip;
-        thread
+        Self {
+            ip,
+            loops: self.loops,
+            lip: self.lip,
+            // calls: self.calls,
+            // cp: self.cp,
+            prev_event: self.prev_event,
+        }
     }
 
     pub fn unloop(&mut self, lip: usize) {
@@ -256,29 +263,6 @@ impl Thread {
             _ => self.lip = Some(lip - 1),
         }
     }
-
-    // pub fn from_parent(ip: usize, parent: &Thread) -> Self {
-    //     Self {
-    //         ip,
-    //         loops: parent.loops.clone(),
-    //         calls: parent.calls.clone(),
-    //         event: parent.event.clone(),
-    //     }
-    // }
-
-    // pub fn start_from(&mut self, ip: usize, parent: &Thread) {
-    //     self.ip = ip;
-    //     self.loops.extend_from_slice(&parent.loops);
-    //     self.calls.extend_from_slice(&parent.calls);
-    //     self.event = parent.event;
-    // }
-
-    // pub fn kill(&mut self) {
-    //     self.ip = 0;
-    //     self.loops.clear();
-    //     self.calls.clear();
-    //     self.event = None;
-    // }
 }
 
 pub struct Parser<T: Matches> {
@@ -286,7 +270,7 @@ pub struct Parser<T: Matches> {
     pub comms: Vec<Comm<T>>,
     pub threads: Vec<Thread>,
     pub next: Vec<Thread>,
-    pub matches: Vec<Option<usize>>,
+    pub best_match: Option<Option<usize>>,
     pub events: Vec<Event>,
 }
 
@@ -298,7 +282,7 @@ impl<T: Matches> Parser<T> {
             comms,
             threads: vec![Thread::new(0)],
             next: Vec::with_capacity(1),
-            matches: Vec::with_capacity(2),
+            best_match: None,
             events: Vec::with_capacity(8),
         }
     }
@@ -327,7 +311,7 @@ impl<T: Matches> Parser<T> {
                 // );
                 match &self.comms[thread.ip] {
                     Comm::Matched => {
-                        self.matches.push(thread.prev_event);
+                        self.best_match = Some(thread.prev_event);
                         break;
                     }
                     Comm::Match(thing) => {
@@ -349,9 +333,9 @@ impl<T: Matches> Parser<T> {
                         self.events.push(event);
                         thread.ip += 1;
                     }
-                    &Comm::StartLoop(len) => {
+                    &Comm::StartLoop => {
                         let lip = if let Some(l) = thread.lip {
-                            if l == 15 {
+                            if l == 3 {
                                 panic!("Loop stack overflow");
                             } else {
                                 l + 1
@@ -393,10 +377,10 @@ impl<T: Matches> Parser<T> {
 
         self.threads.clear();
         if self.next.is_empty() {
-            if self.matches.is_empty() {
-                self.stat = Stat::Failed;
-            } else {
+            if self.best_match.is_some() {
                 self.stat = Stat::Matched;
+            } else {
+                self.stat = Stat::Failed;
             }
         } else {
             std::mem::swap(&mut self.threads, &mut self.next);
@@ -431,8 +415,7 @@ pub fn rep<T: Matches>(value: impl ToComms<T>, mut min: usize, mut max: usize) -
         max = min;
     }
     let inner = value.to_comms();
-    let len = inner.len();
-    let mut comms = vec![Comm::StartLoop(len)];
+    let mut comms = vec![Comm::StartLoop];
     comms.extend(inner);
     comms.push(Comm::CloseLoop(min, max));
     comms

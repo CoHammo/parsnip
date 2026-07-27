@@ -4,19 +4,21 @@ use std::time::Instant;
 
 #[test]
 fn test_enums() {
-    let mut parser: Parser<u8> = run(vec![
-        tok(it("Hello "), Tags::none()),
-        tok(it("World!\n"), Tags::none()),
-    ]);
-    // let mut parser = tokker(str("Hello World!\n"), Tags::none());
-    let source = "Hello World!\n";
+    let mut parser: Parser<u8> = rep(tok(it("Hello Man\n"), Tags::none()), ..);
+    // let mut parser: Parser<u8> = rep(
+    //     run(vec![
+    //         tok(it("Hello "), Tags::none()),
+    //         tok(it("Man\n"), Tags::none()),
+    //     ]),
+    //     ..,
+    // );
+    let source = "Hello Man\n".repeat(1000000);
 
     let start = Instant::now();
-    let res = parser.parse(&source, ..);
-    // let tree = Node::new(&source, &parser.inner.base().events.take());
+    let res = parser.parse(&source.as_str(), ..);
     let duration = start.elapsed();
 
-    println!("{:#?}", parser.take_tokens());
+    // println!("{:#?}", parser.take_tokens());
     println!("{:?}", res);
     println!("{:?}", duration);
 }

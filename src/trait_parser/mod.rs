@@ -265,12 +265,8 @@ impl<T: Matches + 'static> ParserT<T> for Str<T> {
             self.base.stat = Stat::Failed;
         }
         // println!(
-        //     "matching={:?}({}), byte={}, index={}, stat={:?}",
-        //     self.bytes,
-        //     self.bytes[self.index - 1],
-        //     byte.value,
-        //     byte.index(),
-        //     self.base.stat
+        //     "matching={:?}, item={:?}, index={}, stat={:?}",
+        //     self.items, item.value, item.index, self.base.stat
         // );
         self.base.stat
     }
@@ -285,6 +281,7 @@ impl<T: Matches + 'static> ParserT<T> for Str<T> {
     }
 
     fn reset(&mut self) {
+        self.base.reset();
         self.index = 0;
     }
 
@@ -379,19 +376,27 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
         self.base.stat
     }
 
-    fn finish(&mut self, toks: &mut Vec<Event>, item: &Snip<T>) -> Stat {
-        let stat = self.inner.finish(toks, item);
-        match stat {
+    fn finish(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+        match self.inner.finish(events, item) {
             Stat::Matched(end) => {
-                // self.tokenize(end);
+                events.push(Event {
+                    opens: false,
+                    index: end,
+                    prev: match self.inner.base().prev_event {
+                        Some(index) => Some(index),
+                        None => self.base.prev_event,
+                    },
+                });
+                self.base.prev_event = Some(events.len() - 1);
                 self.base.stat = Stat::Matched(end);
             }
-            stat => self.base.stat = stat,
-        };
+            _ => self.base.stat = Stat::Failed,
+        }
         self.base.stat
     }
 
     fn reset(&mut self) {
+        self.base.reset();
         self.inner.reset();
     }
 
@@ -459,12 +464,12 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
             match parser.snip(events, snip) {
                 Stat::Running => {
                     if let Some(index) = parser.base().prev_event {
-                        let event = &mut events[index];
-                        if event.prev.is_none()
-                            && let Some(prev) = self.base.prev_event
+                        if let Some(prev) = self.base.prev_event
                             && prev != index
+                            && let Some(event) = events.get_mut(index)
+                            && event.prev.is_none()
                         {
-                            event.prev = self.base.prev_event;
+                            event.prev = Some(prev);
                         }
                         self.base.prev_event = Some(index);
                     }
@@ -492,11 +497,11 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
         let parser = &mut self.inners[self.index];
         match parser.finish(events, snip) {
             Stat::Matched(end) => {
-                // self.base.add_tokens(parser.base().tokens.take());
-                if self.index == self.len - 1 {
+                self.index += 1;
+                self.base.prev_event = parser.base().prev_event;
+                if self.index == self.len {
                     self.base.stat = Stat::Matched(end);
                 } else if end == snip.index {
-                    self.index += 1;
                     self.finish(events, snip);
                 } else {
                     self.base.stat = Stat::Failed;
@@ -510,8 +515,8 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
     fn reset(&mut self) {
         if !self.base.fresh {
             self.base.reset();
-            for index in 0..=self.index {
-                self.inners[index].reset();
+            for parser in self.inners.iter_mut() {
+                parser.reset();
             }
             self.index = 0;
         }
@@ -551,4 +556,123 @@ pub fn chain<T: Matches>(parsers: &[&dyn ParserT<T>]) -> Chain<T> {
         .collect::<Vec<Box<dyn ParserT<T>>>>()
         .into_boxed_slice();
     Chain::new(inners)
+}
+
+pub struct Rep<T: Matches> {
+    pub base: Base,
+    inner: Box<dyn ParserT<T>>,
+    min: usize,
+    max: usize,
+    count: usize,
+    end: usize,
+    first_event: Option<usize>,
+    last_event: Option<usize>,
+}
+impl<T: Matches> Rep<T> {
+    pub fn new(parser: impl ParserT<T> + 'static, mut min: usize, mut max: usize) -> Self {
+        min = match min {
+            0 => 1,
+            m => m,
+        };
+        if max > 0 && max <= min {
+            max = min;
+        }
+        Self {
+            base: Base::new(),
+            inner: Box::new(parser),
+            min,
+            max,
+            count: 0,
+            end: 0,
+            first_event: None,
+            last_event: None,
+        }
+    }
+}
+
+impl<T: Matches + 'static> ParserT<T> for Rep<T> {
+    fn base(&mut self) -> &mut Base {
+        &mut self.base
+    }
+
+    fn snip(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+        if self.base.fresh {
+            self.base.start = item.index;
+            self.base.fresh = false;
+            let mut iter = item.peeks();
+            while let Some(snip) = iter.next() {
+                match self.inner.snip(events, &snip) {
+                    Stat::Running => {
+                        if let Some(index) = self.inner.base().prev_event {
+                            if let Some(prev) = self.base.prev_event
+                                && prev != index
+                                && let Some(event) = events.get_mut(index)
+                                && event.prev.is_none()
+                            {
+                                event.prev = Some(prev);
+                            }
+                            self.base.prev_event = Some(index)
+                        }
+                    }
+                    Stat::Matched(end) => {
+                        self.count += 1;
+                        self.end = end;
+                        self.base.prev_event = self.inner.base().prev_event;
+                        self.inner.reset();
+                        if self.count == self.max {
+                            self.base.stat = Stat::Matched(end);
+                            break;
+                        } else if end == item.index {
+                            iter.repeat();
+                        }
+                    }
+                    Stat::Failed => {
+                        if self.count >= self.min {
+                            self.base.stat = Stat::Matched(self.end);
+                        } else {
+                            self.base.stat = Stat::Failed;
+                        }
+                        break;
+                    }
+                }
+            }
+            self.base.prev_event = self.first_event;
+        } else {
+            self.base.prev_event = self.last_event;
+        }
+        self.base.stat
+    }
+
+    fn finish(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+        self.base.stat
+    }
+
+    fn reset(&mut self) {
+        if !self.base.fresh {
+            self.count = 0;
+            self.base.reset();
+            self.inner.reset();
+        }
+    }
+
+    fn string(&self) -> String {
+        format!("Rep({:?})", self.inner.string())
+    }
+
+    fn clone_box(&self) -> Box<dyn ParserT<T>> {
+        Box::new(Self {
+            base: Base::new(),
+            inner: self.inner.clone_box(),
+            min: self.min,
+            max: self.max,
+            count: 0,
+            end: 0,
+            first_event: None,
+            last_event: None,
+        })
+    }
+}
+
+pub fn rep<T: Matches>(parser: impl ParserT<T> + 'static, min: usize, max: usize) -> Rep<T> {
+    Rep::new(parser, min, max)
 }
