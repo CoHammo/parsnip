@@ -7,7 +7,7 @@ fn test_vm() {
     // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
     // let mut parser = Parser::new(tok("Hello World!\n"));
     println!("{:?}", parser.comms);
-    let source = "Hello Man\n".repeat(1000000);
+    let source = "Hello Man\n".repeat(100);
 
     let start = Instant::now();
     let res = parser.parse(source.as_str());

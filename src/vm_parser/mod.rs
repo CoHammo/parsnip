@@ -1,12 +1,10 @@
 mod tests;
 
 use std::{
-    cell::{Cell, RefCell},
     ops::{
         Bound::{Excluded, Included, Unbounded},
         RangeBounds,
     },
-    rc::Rc,
     str::Bytes,
 };
 
@@ -224,52 +222,130 @@ impl Loop {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: usize,
-    pub loops: [Loop; 4],
-    pub lip: Option<usize>,
-    // pub calls: [usize; 24],
-    // pub cp: Option<usize>,
+    pub loops: Vec<Loop>,
+    // pub calls: Vec<usize>,
     pub prev_event: Option<usize>,
+    pub prev_thread: Option<usize>,
+    pub next_thread: Option<usize>,
 }
 impl Thread {
     pub fn new(ip: usize) -> Self {
         Self {
             ip,
-            loops: [Loop::new(0); 4],
-            lip: None,
-            // calls: [0; 24],
-            // cp: None,
+            loops: Vec::new(),
+            // calls: Vec::new(),
             prev_event: None,
+            prev_thread: None,
+            next_thread: None,
+        }
+    }
+}
+
+pub struct Threads {
+    pool: Vec<Thread>,
+    first: Option<usize>,
+    index: Option<usize>,
+    last: Option<usize>,
+    next_free: Option<usize>,
+}
+
+impl Threads {
+    pub fn new() -> Self {
+        let mut me = Self {
+            pool: vec![Thread::new(0), Thread::new(0)],
+            first: Some(0),
+            index: Some(0),
+            last: Some(0),
+            next_free: Some(1),
+        };
+        me.pool.push(Thread::new(0));
+        me
+    }
+
+    fn at(&mut self, id: usize) -> &mut Thread {
+        unsafe { self.pool.get_unchecked_mut(id) }
+    }
+
+    fn next(&mut self) -> Option<(usize, usize)> {
+        if let Some(index) = self.index {
+            let thread = self.at(index);
+            let ip = thread.ip;
+            self.index = thread.next_thread;
+            Some((index, ip))
+        } else {
+            None
         }
     }
 
-    pub fn fork(&self, ip: usize) -> Self {
-        Self {
-            ip,
-            loops: self.loops,
-            lip: self.lip,
-            // calls: self.calls,
-            // cp: self.cp,
-            prev_event: self.prev_event,
+    fn free(&mut self, id: usize) {
+        let thread = self.at(id);
+        let prev_thread = thread.prev_thread;
+        let next_thread = thread.next_thread;
+
+        if let Some(prev) = prev_thread {
+            self.at(prev).next_thread = next_thread;
         }
+        if let Some(next) = next_thread {
+            self.at(next).prev_thread = prev_thread;
+        }
+        if let Some(next_free) = self.next_free {
+            self.at(next_free).next_thread = Some(id);
+        } else {
+            self.next_free = Some(id);
+        }
+        if let Some(first) = self.first
+            && first == id
+        {
+            self.first = next_thread;
+        }
+        if let Some(last) = self.last
+            && last == id
+        {
+            self.last = prev_thread;
+        }
+        self.at(id).prev_thread = None;
+        self.at(id).next_thread = None;
     }
 
-    pub fn unloop(&mut self, lip: usize) {
-        self.loops[lip].reset();
-        match lip {
-            0 => self.lip = None,
-            _ => self.lip = Some(lip - 1),
+    fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
+        let free_id = match self.next_free {
+            Some(i) => {
+                self.next_free = self.at(i).next_thread;
+                i
+            }
+            None => {
+                let i = self.pool.len();
+                let t = Thread::new(0);
+                self.pool.push(t);
+                i
+            }
+        };
+        let [thread, free] = unsafe { self.pool.get_disjoint_unchecked_mut([id, free_id]) };
+        free.loops.clone_from(&thread.loops);
+        free.prev_event = thread.prev_event;
+        if let Some(last) = self.last {
+            free.prev_thread = Some(last);
+            func(free);
+            self.at(last).next_thread = Some(free_id);
+        } else {
+            func(free);
         }
+        self.last = Some(free_id);
+    }
+
+    fn restart(&mut self) -> bool {
+        self.index = self.first;
+        self.index.is_some()
     }
 }
 
 pub struct Parser<T: Matches> {
     stat: Stat,
     pub comms: Vec<Comm<T>>,
-    pub threads: Vec<Thread>,
-    pub next: Vec<Thread>,
+    pub threads: Threads,
     pub best_match: Option<Option<usize>>,
     pub events: Vec<Event>,
 }
@@ -280,8 +356,7 @@ impl<T: Matches> Parser<T> {
         Self {
             stat: Stat::Running,
             comms,
-            threads: vec![Thread::new(0)],
-            next: Vec::with_capacity(1),
+            threads: Threads::new(),
             best_match: None,
             events: Vec::with_capacity(8),
         }
@@ -300,30 +375,29 @@ impl<T: Matches> Parser<T> {
     }
 
     pub fn take_snip<I: SnipIter<T>>(&mut self, snip: &Snip<T, I>) -> Stat {
-        let mut thread_index = 0;
-        while thread_index < self.threads.len() {
-            let mut thread = self.threads[thread_index];
-
+        while let Some((id, mut ip)) = self.threads.next() {
             loop {
                 // println!(
                 //     "Comm::{:?}, snipdex={}, snip={:?}",
-                //     self.comms[thread.ip], snip.index, snip.value
+                //     self.comms[ip], snip.index, snip.value
                 // );
-                match &self.comms[thread.ip] {
+                match &self.comms[ip] {
                     Comm::Matched => {
-                        self.best_match = Some(thread.prev_event);
+                        self.best_match = Some(self.threads.at(id).prev_event);
+                        // self.best_match = Some(thread.prev_event);
                         break;
                     }
                     Comm::Match(thing) => {
                         if !snip.end && thing.matches(&snip.value) {
-                            thread.ip += 1;
-                            self.next.push(thread);
-                            break;
+                            // thread.ip += 1;
+                            self.threads.at(id).ip = ip + 1;
                         } else {
-                            break;
+                            self.threads.free(id);
                         }
+                        break;
                     }
                     &Comm::Tok(opens) => {
+                        let thread = self.threads.at(id);
                         let event = Event {
                             opens,
                             index: snip.index,
@@ -331,37 +405,28 @@ impl<T: Matches> Parser<T> {
                         };
                         thread.prev_event = Some(self.events.len());
                         self.events.push(event);
-                        thread.ip += 1;
+                        ip += 1;
                     }
                     &Comm::StartLoop => {
-                        let lip = if let Some(l) = thread.lip {
-                            if l == 3 {
-                                panic!("Loop stack overflow");
-                            } else {
-                                l + 1
-                            }
-                        } else {
-                            0
-                        };
-                        thread.lip = Some(lip);
-                        thread.loops[lip].start(thread.ip + 1);
-                        thread.ip += 1;
+                        let thread = self.threads.at(id);
+                        thread.loops.push(Loop::new(ip + 1));
+                        ip += 1;
                     }
                     &Comm::CloseLoop(min, max) => {
-                        if let Some(lip) = thread.lip {
-                            let loo = &mut thread.loops[lip];
+                        let thread = self.threads.at(id);
+                        if let Some(loo) = thread.loops.last_mut() {
                             loo.count += 1;
                             if loo.count == max {
-                                thread.unloop(lip);
-                                thread.ip += 1;
+                                thread.loops.pop();
+                                ip += 1;
                             } else {
-                                let loop_start = loo.start;
+                                ip = loo.start;
                                 if loo.count >= min {
-                                    let mut after = thread.fork(thread.ip + 1);
-                                    after.unloop(lip);
-                                    self.threads.push(after);
+                                    self.threads.fork(id, |fork| {
+                                        fork.ip = ip + 1;
+                                        fork.loops.pop();
+                                    });
                                 }
-                                thread.ip = loop_start;
                             }
                         } else {
                             println!("Tried to close a loop with no start");
@@ -370,20 +435,14 @@ impl<T: Matches> Parser<T> {
                         }
                     }
                 }
-            } // End of Command Loop
+            } // Command Loop
+        } // Threads Loop
 
-            thread_index += 1;
-        }
-
-        self.threads.clear();
-        if self.next.is_empty() {
-            if self.best_match.is_some() {
-                self.stat = Stat::Matched;
-            } else {
-                self.stat = Stat::Failed;
+        if !self.threads.restart() {
+            self.stat = match self.best_match {
+                Some(_) => Stat::Matched,
+                None => Stat::Failed,
             }
-        } else {
-            std::mem::swap(&mut self.threads, &mut self.next);
         }
         self.stat
     }

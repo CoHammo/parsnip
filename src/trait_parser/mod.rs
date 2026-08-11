@@ -160,7 +160,7 @@ impl<T: Matches> Parser<T> {
     pub fn parse(&mut self, source: &impl ParseAs<T>) -> Stat {
         let mut iter = source.snips(..);
         while let Some(item) = iter.next() {
-            match self.inner.snip(&mut self.events, &item) {
+            match self.inner.snip(&item) {
                 Stat::Running => {}
                 _ => break,
             }
@@ -170,6 +170,13 @@ impl<T: Matches> Parser<T> {
             _ => self.inner.base().stat,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub start: usize,
+    pub end: usize,
+    pub toks: Option<Vec<Token>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -184,7 +191,7 @@ pub struct Base {
     pub stat: Stat,
     pub fresh: bool,
     pub start: usize,
-    pub prev_event: Option<usize>,
+    pub toks: Option<Vec<Token>>,
 }
 impl Base {
     pub fn new() -> Self {
@@ -192,7 +199,7 @@ impl Base {
             stat: Stat::Running,
             fresh: true,
             start: 0,
-            prev_event: None,
+            toks: None,
         }
     }
 
@@ -200,23 +207,23 @@ impl Base {
         self.stat = Stat::Running;
         self.fresh = true;
         self.start = 0;
-        self.prev_event = None;
+        self.toks = None;
     }
 
-    // pub fn add_tokens(&mut self, tokens: Tokens) {
-    //     if let Some(new_tokens) = tokens {
-    //         if let Some(toks) = &mut self.events {
-    //             toks.extend(new_tokens);
-    //         } else {
-    //             self.events = Some(new_tokens);
-    //         }
-    //     }
-    // }
+    pub fn add_tokens(&mut self, tokens: Option<Vec<Token>>) {
+        if let Some(more) = tokens {
+            if let Some(toks) = &mut self.toks {
+                toks.extend(more);
+            } else {
+                self.toks = Some(more);
+            }
+        }
+    }
 }
 
 pub trait ParserT<T: Matches> {
     fn base(&mut self) -> &mut Base;
-    fn snip(&mut self, toks: &mut Vec<Event>, item: &Snip<T>) -> Stat;
+    fn snip(&mut self, item: &Snip<T>) -> Stat;
     fn finish(&mut self, toks: &mut Vec<Event>, item: &Snip<T>) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
@@ -249,7 +256,7 @@ impl<T: Matches + 'static> ParserT<T> for Str<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, _: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
             self.base.fresh = false;
@@ -323,15 +330,6 @@ impl<T: Matches> Tok<T> {
             tag,
         }
     }
-
-    // fn tokenize(&mut self, end: usize) {
-    //     self.base.tokens = Some(vec![Token::new(
-    //         self.tag,
-    //         self.base.start,
-    //         end,
-    //         self.base.tokens.take(),
-    //     )]);
-    // }
 }
 
 impl<T: Matches + 'static> ParserT<T> for Tok<T> {
@@ -339,36 +337,19 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
-            self.base.prev_event = Some(events.len());
-            events.push(Event {
-                opens: true,
-                index: item.index,
-                prev: None,
-            });
             self.base.fresh = false;
         }
-        match self.inner.snip(events, item) {
-            Stat::Running => {
-                if let Some(index) = self.inner.base().prev_event {
-                    let event = &mut events[index];
-                    if event.prev.is_none() {
-                        event.prev = self.base.prev_event;
-                    }
-                }
-            }
+        match self.inner.snip(item) {
+            Stat::Running => {}
             Stat::Matched(end) => {
-                events.push(Event {
-                    opens: false,
-                    index: end,
-                    prev: match self.inner.base().prev_event {
-                        Some(index) => Some(index),
-                        None => self.base.prev_event,
-                    },
-                });
-                self.base.prev_event = Some(events.len() - 1);
+                self.base.toks = Some(vec![Token {
+                    start: self.base.start,
+                    end,
+                    toks: self.inner.base().toks.take(),
+                }]);
                 self.base.stat = Stat::Matched(end);
             }
             Stat::Failed => self.base.stat = Stat::Failed,
@@ -379,15 +360,11 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
     fn finish(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
         match self.inner.finish(events, item) {
             Stat::Matched(end) => {
-                events.push(Event {
-                    opens: false,
-                    index: end,
-                    prev: match self.inner.base().prev_event {
-                        Some(index) => Some(index),
-                        None => self.base.prev_event,
-                    },
-                });
-                self.base.prev_event = Some(events.len() - 1);
+                self.base.toks = Some(vec![Token {
+                    start: self.base.start,
+                    end,
+                    toks: self.inner.base().toks.take(),
+                }]);
                 self.base.stat = Stat::Matched(end);
             }
             _ => self.base.stat = Stat::Failed,
@@ -454,34 +431,23 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, snip: &Snip<T>) -> Stat {
+    fn snip(&mut self, snip: &Snip<T>) -> Stat {
         if snip.index >= self.check_at_index {
             if self.base.fresh {
                 self.base.start = snip.index;
                 self.base.fresh = false;
             }
-            let parser = &mut self.inners[self.index];
-            match parser.snip(events, snip) {
-                Stat::Running => {
-                    if let Some(index) = parser.base().prev_event {
-                        if let Some(prev) = self.base.prev_event
-                            && prev != index
-                            && let Some(event) = events.get_mut(index)
-                            && event.prev.is_none()
-                        {
-                            event.prev = Some(prev);
-                        }
-                        self.base.prev_event = Some(index);
-                    }
-                }
+            let inner = &mut self.inners[self.index];
+            match inner.snip(snip) {
+                Stat::Running => {}
                 Stat::Matched(end) => {
+                    self.base.add_tokens(inner.base().toks.take());
                     self.index += 1;
-                    self.base.prev_event = parser.base().prev_event;
                     if self.index == self.len {
                         self.base.stat = Stat::Matched(end);
                     } else {
                         if end == snip.index {
-                            self.snip(events, snip);
+                            self.snip(snip);
                         } else {
                             self.check_at_index = end;
                         }
@@ -494,11 +460,11 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
     }
 
     fn finish(&mut self, events: &mut Vec<Event>, snip: &Snip<T>) -> Stat {
-        let parser = &mut self.inners[self.index];
-        match parser.finish(events, snip) {
+        let inner = &mut self.inners[self.index];
+        match inner.finish(events, snip) {
             Stat::Matched(end) => {
                 self.index += 1;
-                self.base.prev_event = parser.base().prev_event;
+                self.base.add_tokens(inner.base().toks.take());
                 if self.index == self.len {
                     self.base.stat = Stat::Matched(end);
                 } else if end == snip.index {
@@ -565,8 +531,6 @@ pub struct Rep<T: Matches> {
     max: usize,
     count: usize,
     end: usize,
-    first_event: Option<usize>,
-    last_event: Option<usize>,
 }
 impl<T: Matches> Rep<T> {
     pub fn new(parser: impl ParserT<T> + 'static, mut min: usize, mut max: usize) -> Self {
@@ -584,8 +548,6 @@ impl<T: Matches> Rep<T> {
             max,
             count: 0,
             end: 0,
-            first_event: None,
-            last_event: None,
         }
     }
 }
@@ -595,29 +557,18 @@ impl<T: Matches + 'static> ParserT<T> for Rep<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
             self.base.fresh = false;
             let mut iter = item.peeks();
             while let Some(snip) = iter.next() {
-                match self.inner.snip(events, &snip) {
-                    Stat::Running => {
-                        if let Some(index) = self.inner.base().prev_event {
-                            if let Some(prev) = self.base.prev_event
-                                && prev != index
-                                && let Some(event) = events.get_mut(index)
-                                && event.prev.is_none()
-                            {
-                                event.prev = Some(prev);
-                            }
-                            self.base.prev_event = Some(index)
-                        }
-                    }
+                match self.inner.snip(&snip) {
+                    Stat::Running => {}
                     Stat::Matched(end) => {
                         self.count += 1;
                         self.end = end;
-                        self.base.prev_event = self.inner.base().prev_event;
+                        self.base.add_tokens(self.inner.base().toks.take());
                         self.inner.reset();
                         if self.count == self.max {
                             self.base.stat = Stat::Matched(end);
@@ -636,9 +587,6 @@ impl<T: Matches + 'static> ParserT<T> for Rep<T> {
                     }
                 }
             }
-            self.base.prev_event = self.first_event;
-        } else {
-            self.base.prev_event = self.last_event;
         }
         self.base.stat
     }
@@ -667,8 +615,6 @@ impl<T: Matches + 'static> ParserT<T> for Rep<T> {
             max: self.max,
             count: 0,
             end: 0,
-            first_event: None,
-            last_event: None,
         })
     }
 }
