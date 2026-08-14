@@ -2,7 +2,7 @@ mod tests;
 
 use std::{
     ops::{
-        Bound::{Excluded, Included, Unbounded},
+        Bound::{self},
         RangeBounds,
     },
     str::Bytes,
@@ -47,7 +47,7 @@ pub struct Event {
 
 pub trait Matches: Default + std::fmt::Debug + Clone {
     fn matches(&self, other: &Self) -> bool;
-    fn snip_copy(&self) -> Self;
+    fn copy_snip(&self) -> Self;
 }
 
 impl Matches for u8 {
@@ -55,27 +55,26 @@ impl Matches for u8 {
         self == other
     }
 
-    fn snip_copy(&self) -> u8 {
+    fn copy_snip(&self) -> u8 {
         *self
     }
 }
 
 #[derive(Debug)]
 pub struct Snip<'a, T: Matches, I: SnipIter<T>> {
-    pub value: T,
+    pub value: Option<T>,
     pub index: usize,
-    pub end: bool,
     snips: &'a Snips<T, I>,
 }
 
 impl<'a, T: Matches, I: SnipIter<T>> Snip<'a, T, I> {
-    pub fn peeks(&self) -> Snips<T, I> {
+    pub fn peek_snips(&self) -> Snips<T, I> {
         self.snips.clone()
     }
 }
 
 pub trait AsSnips<T: Matches, I: SnipIter<T>> {
-    fn snips(&self, range: impl RangeBounds<usize>) -> Snips<T, I>;
+    fn as_snips(&self, range: impl RangeBounds<usize>) -> Snips<T, I>;
 }
 
 pub trait ToComms<T: Matches> {
@@ -83,7 +82,7 @@ pub trait ToComms<T: Matches> {
 }
 
 impl<'a> AsSnips<u8, Bytes<'a>> for &'a str {
-    fn snips(&self, range: impl RangeBounds<usize>) -> Snips<u8, Bytes<'a>> {
+    fn as_snips(&self, range: impl RangeBounds<usize>) -> Snips<u8, Bytes<'a>> {
         Snips::new(self.bytes(), self.len(), range)
     }
 }
@@ -102,6 +101,7 @@ pub struct Snips<T: Matches, I: SnipIter<T>> {
     repeat: bool,
     index: usize,
     end: usize,
+    terminated: bool,
     snip: T,
     iter: I,
 }
@@ -109,49 +109,39 @@ pub struct Snips<T: Matches, I: SnipIter<T>> {
 impl<T: Matches, I: SnipIter<T>> Snips<T, I> {
     pub fn new(mut iter: I, source_len: usize, range: impl RangeBounds<usize>) -> Self {
         let start = match range.start_bound() {
-            Included(start) => *start,
-            Excluded(start) => *start + 1,
-            Unbounded => 0,
+            Bound::Included(s) => *s,
+            Bound::Excluded(s) => *s + 1,
+            Bound::Unbounded => 0,
         };
-        let end = match range.end_bound() {
-            Included(end) => *end + 1,
-            Excluded(end) => *end,
-            Unbounded => source_len,
+        let mut end = match range.end_bound() {
+            Bound::Included(e) => *e + 1,
+            Bound::Excluded(e) => *e,
+            Bound::Unbounded => source_len,
         };
-        let snip: T = if start < end {
-            for _ in 0..start {
-                iter.next();
-            }
-            match iter.next() {
-                Some(i) => i,
-                None => T::default(),
-            }
-        } else {
-            T::default()
+        if end > source_len {
+            end = source_len;
+        }
+        for _ in 0..start {
+            iter.next();
+        }
+        let snip = match iter.next() {
+            Some(s) => s,
+            None => T::default(),
         };
         Self {
             repeat: true,
             index: start,
             end,
+            terminated: false,
             snip,
             iter,
         }
     }
 
-    pub fn snip(&self) -> Snip<'_, T, I> {
+    fn get_snip(&self) -> Snip<'_, T, I> {
         Snip {
-            value: self.snip.snip_copy(),
+            value: Some(self.snip.copy_snip()),
             index: self.index,
-            end: false,
-            snips: self,
-        }
-    }
-
-    pub fn end_snip(&self) -> Snip<'_, T, I> {
-        Snip {
-            value: self.snip.snip_copy(),
-            index: self.index + 1,
-            end: true,
             snips: self,
         }
     }
@@ -160,16 +150,31 @@ impl<T: Matches, I: SnipIter<T>> Snips<T, I> {
         if self.index < self.end {
             if self.repeat {
                 self.repeat = false;
-                Some(self.snip())
+                Some(self.get_snip())
             } else if let Some(snip) = self.iter.next() {
                 self.index += 1;
                 self.snip = snip;
-                Some(self.snip())
+                Some(self.get_snip())
+            } else {
+                self.index += 1;
+                self.end = self.index;
+                self.terminated = true;
+                Some(Snip {
+                    value: None,
+                    index: self.index,
+                    snips: self,
+                })
+            }
+        } else {
+            if !self.terminated {
+                Some(Snip {
+                    value: None,
+                    index: self.index,
+                    snips: self,
+                })
             } else {
                 None
             }
-        } else {
-            None
         }
     }
 }
@@ -180,7 +185,8 @@ impl<T: Matches, I: SnipIter<T>> Clone for Snips<T, I> {
             repeat: true,
             index: self.index,
             end: self.end,
-            snip: self.snip.snip_copy(),
+            terminated: self.terminated,
+            snip: self.snip.copy_snip(),
             iter: self.iter.clone(),
         }
     }
@@ -211,32 +217,23 @@ impl Loop {
     pub fn new(start: usize) -> Self {
         Self { start, count: 0 }
     }
-
-    pub fn start(&mut self, start: usize) {
-        self.start = start;
-    }
-
-    pub fn reset(&mut self) {
-        self.start = 0;
-        self.count = 0;
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: usize,
     pub loops: Vec<Loop>,
-    // pub calls: Vec<usize>,
+    pub calls: Vec<usize>,
     pub prev_event: Option<usize>,
-    pub prev_thread: Option<usize>,
-    pub next_thread: Option<usize>,
+    prev_thread: Option<usize>,
+    next_thread: Option<usize>,
 }
 impl Thread {
     pub fn new(ip: usize) -> Self {
         Self {
             ip,
             loops: Vec::new(),
-            // calls: Vec::new(),
+            calls: Vec::new(),
             prev_event: None,
             prev_thread: None,
             next_thread: None,
@@ -244,6 +241,7 @@ impl Thread {
     }
 }
 
+#[derive(Debug)]
 pub struct Threads {
     pool: Vec<Thread>,
     first: Option<usize>,
@@ -265,11 +263,11 @@ impl Threads {
         me
     }
 
-    fn at(&mut self, id: usize) -> &mut Thread {
+    pub fn at(&mut self, id: usize) -> &mut Thread {
         unsafe { self.pool.get_unchecked_mut(id) }
     }
 
-    fn next(&mut self) -> Option<(usize, usize)> {
+    pub fn next(&mut self) -> Option<(usize, usize)> {
         if let Some(index) = self.index {
             let thread = self.at(index);
             let ip = thread.ip;
@@ -280,7 +278,7 @@ impl Threads {
         }
     }
 
-    fn free(&mut self, id: usize) {
+    pub fn free(&mut self, id: usize) {
         let thread = self.at(id);
         let prev_thread = thread.prev_thread;
         let next_thread = thread.next_thread;
@@ -310,7 +308,7 @@ impl Threads {
         self.at(id).next_thread = None;
     }
 
-    fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
+    pub fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
         let free_id = match self.next_free {
             Some(i) => {
                 self.next_free = self.at(i).next_thread;
@@ -325,18 +323,20 @@ impl Threads {
         };
         let [thread, free] = unsafe { self.pool.get_disjoint_unchecked_mut([id, free_id]) };
         free.loops.clone_from(&thread.loops);
+        free.calls.clone_from(&thread.calls);
         free.prev_event = thread.prev_event;
+        func(free);
         if let Some(last) = self.last {
             free.prev_thread = Some(last);
-            func(free);
             self.at(last).next_thread = Some(free_id);
-        } else {
-            func(free);
         }
         self.last = Some(free_id);
+        if self.index.is_none() {
+            self.index = Some(free_id);
+        }
     }
 
-    fn restart(&mut self) -> bool {
+    pub fn restart(&mut self) -> bool {
         self.index = self.first;
         self.index.is_some()
     }
@@ -363,33 +363,32 @@ impl<T: Matches> Parser<T> {
     }
 
     pub fn parse<I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Stat {
-        let mut iter = source.snips(..);
-        while let Some(snip) = iter.next() {
-            match self.take_snip(&snip) {
-                Stat::Running => {}
-                _ => break,
-            }
+        let mut snips = source.as_snips(..);
+        while let Some(snip) = snips.next() {
+            self.take_snip(&snip);
         }
-        self.take_snip(&iter.end_snip());
         self.stat
     }
 
-    pub fn take_snip<I: SnipIter<T>>(&mut self, snip: &Snip<T, I>) -> Stat {
-        while let Some((id, mut ip)) = self.threads.next() {
+    pub fn take_snip<I: SnipIter<T>>(&mut self, snip: &Snip<T, I>) {
+        while let Some((id, mut ip)) = self.threads.next()
+            && self.stat == Stat::Running
+        {
             loop {
                 // println!(
-                //     "Comm::{:?}, snipdex={}, snip={:?}",
-                //     self.comms[ip], snip.index, snip.value
+                //     "Thread {}: comm={:?}, snipdex={}, snip={:?}",
+                //     id, self.comms[ip], snip.index, snip.value
                 // );
-                match &self.comms[ip] {
+                match unsafe { self.comms.get_unchecked(ip) } {
                     Comm::Matched => {
                         self.best_match = Some(self.threads.at(id).prev_event);
-                        // self.best_match = Some(thread.prev_event);
+                        self.threads.free(id);
                         break;
                     }
                     Comm::Match(thing) => {
-                        if !snip.end && thing.matches(&snip.value) {
-                            // thread.ip += 1;
+                        if let Some(value) = &snip.value
+                            && thing.matches(value)
+                        {
                             self.threads.at(id).ip = ip + 1;
                         } else {
                             self.threads.free(id);
@@ -407,7 +406,7 @@ impl<T: Matches> Parser<T> {
                         self.events.push(event);
                         ip += 1;
                     }
-                    &Comm::StartLoop => {
+                    Comm::StartLoop => {
                         let thread = self.threads.at(id);
                         thread.loops.push(Loop::new(ip + 1));
                         ip += 1;
@@ -420,10 +419,11 @@ impl<T: Matches> Parser<T> {
                                 thread.loops.pop();
                                 ip += 1;
                             } else {
+                                let fork_ip = ip + 1;
                                 ip = loo.start;
                                 if loo.count >= min {
                                     self.threads.fork(id, |fork| {
-                                        fork.ip = ip + 1;
+                                        fork.ip = fork_ip;
                                         fork.loops.pop();
                                     });
                                 }
@@ -444,7 +444,6 @@ impl<T: Matches> Parser<T> {
                 None => Stat::Failed,
             }
         }
-        self.stat
     }
 }
 
