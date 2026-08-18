@@ -12,7 +12,7 @@ fn test_enums() {
         ]),
         ..,
     );
-    let source = "Hello Man\n".repeat(100);
+    let source = "Hello Man\n".repeat(1000000);
 
     let start = Instant::now();
     let res = parser.parse(&source.as_str(), ..);
