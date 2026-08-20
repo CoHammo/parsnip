@@ -49,7 +49,7 @@ fn test_vm() {
     // println!("{:#?}", parser.ord_events);
     println!("Best Match: {:?}", parser.best_match);
     println!("Total Threads: {}", parser.threads.pool.len());
-    // println!("{:?}", res_str);
+    println!("{:?}", res_str);
     println!("{:?}", duration);
 }
 

@@ -8,8 +8,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 icu_normalizer = "2.2.0"
-indexmap = "2.14.0"
-rustc-hash = "2.1.3"
+# indexmap = "2.14.0"
+# rustc-hash = "2.1.3"
 # js-sys = "0.3.99"
 # unicode-segmentation = "1.13.3"
 # wasm-bindgen = "0.2.122"

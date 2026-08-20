@@ -200,19 +200,19 @@ pub enum Stat {
     Failed,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Jump {
-    Up(usize),
-    Back(usize),
-}
+// #[derive(Debug, Clone, Copy)]
+// pub enum Jump {
+//     Up(usize),
+//     Back(usize),
+// }
 
 #[derive(Debug, Clone)]
 pub enum Comm<T: Matches> {
     Matched,
     Match(T),
     MatchAny,
-    Jump(Jump),
-    Branch(Jump, Jump),
+    Jump(bool, usize),
+    Branch(bool, usize, bool, usize),
     Scope,
     CommitScope,
     KillScope,
@@ -365,15 +365,6 @@ impl Threads {
             self.at(next).prev_thread = prev_thread;
         }
 
-        if let Some(mut free) = self.next_free {
-            while let Some(f) = self.at(free).next_thread {
-                free = f;
-            }
-            self.at(free).next_thread = Some(id);
-        } else {
-            self.next_free = Some(id);
-        }
-
         if let Some(first) = self.first
             && first == id
         {
@@ -390,7 +381,12 @@ impl Threads {
             self.last = prev_thread;
         }
 
-        self.at(id).reset();
+        let next_free = self.next_free;
+        let thread = self.at(id);
+        thread.reset();
+        thread.next_thread = next_free;
+        self.next_free = Some(id);
+
         if self.debug {
             println!("    Freed Thread {}", id);
         }
@@ -398,15 +394,15 @@ impl Threads {
 
     pub fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
         let fork_id = match self.next_free {
-            Some(free) => {
-                self.next_free = self.at(free).next_thread;
-                free
+            Some(free_id) => {
+                self.next_free = self.at(free_id).next_thread;
+                free_id
             }
             None => {
-                let free = self.pool.len();
+                let free_id = self.pool.len();
                 let t = Thread::new(0);
                 self.pool.push(t);
-                free
+                free_id
             }
         };
         let [thread, fork] = unsafe { self.pool.get_disjoint_unchecked_mut([id, fork_id]) };
@@ -554,22 +550,22 @@ impl<T: Matches> Parser<T> {
                         self.threads.at(id).ip = ip + 1;
                         break;
                     }
-                    &Comm::Jump(jump) => {
-                        ip = match jump {
-                            Jump::Up(add) => ip + add,
-                            Jump::Back(sub) => ip - sub,
+                    &Comm::Jump(up, num) => {
+                        ip = match up {
+                            true => ip + num,
+                            false => ip - num,
                         }
                     }
-                    &Comm::Branch(b1, b2) => {
+                    &Comm::Branch(up1, num1, up2, num2) => {
                         self.threads.fork(id, |thread| {
-                            thread.ip = match b2 {
-                                Jump::Up(add) => ip + add,
-                                Jump::Back(sub) => ip - sub,
+                            thread.ip = match up2 {
+                                true => ip + num2,
+                                false => ip - num2,
                             }
                         });
-                        ip = match b1 {
-                            Jump::Up(add) => ip + add,
-                            Jump::Back(sub) => ip - sub,
+                        ip = match up1 {
+                            true => ip + num1,
+                            false => ip - num1,
                         };
                     }
                     Comm::Scope => {
@@ -593,6 +589,7 @@ impl<T: Matches> Parser<T> {
                         if let Some(State::Scope(scope)) = self.threads.at(id).state.last() {
                             let s = *scope;
                             self.threads.kill_scope(s);
+                            break;
                         } else {
                             println!("Tried to kill a scope that doesn't exist");
                             self.stat = Stat::Failed;
@@ -755,14 +752,11 @@ pub fn alt<T: Matches>(values: Vec<impl ToComms<T>>) -> Vec<Comm<T>> {
     for (i, branch) in branches.iter_mut().enumerate() {
         if i != num_branches - 1 {
             len += branch.len() + 1;
-            comms.push(Comm::Branch(
-                Jump::Up(1),
-                Jump::Up(len + num_branches_left + 1),
-            ));
+            comms.push(Comm::Branch(true, 1, true, len + num_branches_left + 1));
             num_branches_left -= 1;
 
             total_len -= branch.len() + 1;
-            branch.push(Comm::Jump(Jump::Up(total_len + 1)));
+            branch.push(Comm::Jump(true, total_len + 1));
         }
     }
 
