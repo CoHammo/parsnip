@@ -10,11 +10,15 @@ fn test_vm() {
 
     let mut parser = Parser::new(rep(
         alt(vec![
-            tok(run(vec![
-                tok(run(vec![rep("#", 1, 6), str(" ")])),
-                tok(till("\n")),
-            ])),
-            // tok(till("\n")),
+            branch(
+                tok(run(vec![
+                    tok(run(vec![rep("#", 1, 6), str(" ")])),
+                    commit(),
+                    tok(till("\n")),
+                ])),
+                true,
+            ),
+            branch(tok(till("\n")), false),
         ]),
         1,
         0,
@@ -54,7 +58,11 @@ fn test_vm() {
 
 #[test]
 fn test_alt_compile() {
-    let parser = Parser::new(alt(vec!["hi", "him", "himmel"]));
+    let parser = Parser::new(alt(vec![
+        branch("hi", true),
+        branch("him", true),
+        branch("himmel", false),
+    ]));
 
     println!("{:?}", parser.comms);
 }

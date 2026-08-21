@@ -1,5 +1,12 @@
 use super::*;
 
+#[derive(Debug, Clone)]
+pub struct Branch<T: Matches> {
+    comms: Vec<Comm<T>>,
+    commits: bool,
+    len: usize,
+}
+
 impl<T: Matches> ToComms<T> for Vec<Comm<T>> {
     fn to_comms(self) -> Vec<Comm<T>> {
         self
@@ -40,18 +47,6 @@ pub fn run<T: Matches>(values: Vec<impl ToComms<T>>) -> Vec<Comm<T>> {
     all
 }
 
-// pub fn till<T: Matches>(values: impl ToComms<T>) -> Vec<Comm<T>> {
-//     let mut comms = vec![
-//         Comm::Scope,
-//         Comm::Branch(Jump::Up(1), Jump::Up(3)),
-//         Comm::MatchAny,
-//         Comm::Jump(Jump::Back(2)),
-//     ];
-//     comms.extend(values.to_comms());
-//     comms.push(Comm::Commit);
-//     comms
-// }
-
 pub fn till<T: Matches>(values: impl ToComms<T>) -> Vec<Comm<T>> {
     let mut comms = vec![Comm::Save];
     comms.extend(values.to_comms());
@@ -59,39 +54,56 @@ pub fn till<T: Matches>(values: impl ToComms<T>) -> Vec<Comm<T>> {
     comms
 }
 
-pub fn alt<T: Matches>(values: Vec<impl ToComms<T>>) -> Vec<Comm<T>> {
+pub fn branch<T: Matches>(values: impl ToComms<T>, commits: bool) -> Branch<T> {
+    let comms = values.to_comms();
+    let len = comms.len() + 1;
+    Branch {
+        comms,
+        commits,
+        len,
+    }
+}
+
+pub fn alt<T: Matches>(mut branches: Vec<Branch<T>>) -> Vec<Comm<T>> {
     let mut comms = vec![Comm::Scope];
-    let mut branches: Vec<Vec<Comm<T>>> = Vec::new();
-    let num_branches: usize = values.len();
+    let num_branches = branches.len();
 
     let mut total_len: usize = 0;
-    for (i, value) in values.into_iter().enumerate() {
-        let branch = value.to_comms();
-        if i == num_branches - 1 {
-            total_len += branch.len();
+    for (i, branch) in branches.iter_mut().enumerate() {
+        if i != num_branches - 1 {
+            total_len += branch.len;
         } else {
-            total_len += branch.len() + 1;
+            match branch.commits {
+                true => {
+                    total_len += branch.len;
+                    branch.comms.push(Comm::Jump(true, 2));
+                }
+                false => total_len += branch.len - 1,
+            }
         }
-        branches.push(branch);
     }
 
-    let mut num_branches_left: usize = num_branches - 2;
+    let mut branches_left: usize = num_branches - 2;
     let mut len: usize = 0;
     for (i, branch) in branches.iter_mut().enumerate() {
         if i != num_branches - 1 {
-            len += branch.len() + 1;
-            comms.push(Comm::Branch(true, 1, true, len + num_branches_left + 1));
-            num_branches_left -= 1;
+            len += branch.len;
+            comms.push(Comm::Branch(true, 1, true, len + branches_left + 1));
+            branches_left -= 1;
 
-            total_len -= branch.len() + 1;
-            branch.push(Comm::Jump(true, total_len + 1));
+            let add = if branch.commits { 2 } else { 1 };
+            branch.comms.push(Comm::Jump(true, total_len - len + add));
         }
     }
 
     for branch in branches {
-        comms.extend(branch);
+        comms.extend(branch.comms);
     }
-
     comms.push(Comm::CommitScope);
+
     comms
+}
+
+pub fn commit<T: Matches>() -> Vec<Comm<T>> {
+    vec![Comm::CommitScope]
 }
