@@ -1,32 +1,50 @@
-use std::ops::{Index, IndexMut};
+pub trait CopyTo {
+    fn copy_to(&self, target: &mut Self);
+}
 
-impl<T: Default + CopyTo<T>> Index<usize> for VecLinkedList<T> {
-    type Output = Link<T>;
+#[derive(Debug)]
+pub struct Link<T: Default + CopyTo> {
+    ptr: *mut Node<T>,
+    // pub index: usize,
+}
 
-    fn index(&self, index: usize) -> &Self::Output {
-        unsafe { self.data.get_unchecked(index) }
+impl<T: Default + CopyTo> Link<T> {
+    pub fn new(ptr: *mut Node<T>) -> Self {
+        Self { ptr }
+    }
+
+    pub fn get(&self) -> &mut Node<T> {
+        unsafe { &mut *self.ptr }
+    }
+
+    pub fn val(&self) -> &mut T {
+        &mut (unsafe { &mut *self.ptr }).value
     }
 }
 
-impl<T: Default + CopyTo<T>> IndexMut<usize> for VecLinkedList<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Link<T> {
-        unsafe { self.data.get_unchecked_mut(index) }
+impl<T: Default + CopyTo> Clone for Link<T> {
+    fn clone(&self) -> Self {
+        Self { ptr: self.ptr }
     }
 }
 
-pub trait CopyTo<T: Default> {
-    fn copy_to(&self, target: &mut T);
+impl<T: Default + CopyTo> Copy for Link<T> {}
+
+impl<T: Default + CopyTo> PartialEq for Link<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr == other.ptr
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct Link<T: Default + CopyTo<T>> {
+pub struct Node<T: Default + CopyTo> {
     pub value: T,
-    pub prev: Option<usize>,
-    pub next: Option<usize>,
+    pub prev: Option<Link<T>>,
+    pub next: Option<Link<T>>,
     pub refs: usize,
 }
 
-impl<T: Default + CopyTo<T>> Link<T> {
+impl<T: Default + CopyTo> Node<T> {
     pub fn new() -> Self {
         Self {
             value: T::default(),
@@ -43,47 +61,47 @@ impl<T: Default + CopyTo<T>> Link<T> {
     }
 }
 
-pub struct VecLinkedListIter<'a, T: Default + CopyTo<T>> {
-    source: &'a mut VecLinkedList<T>,
-    index: Option<usize>,
-}
+// pub struct VecLinkedListIter<'a, T: Default + CopyTo<T>> {
+//     source: &'a mut VecLinkedList<T>,
+//     index: Option<usize>,
+// }
 
-impl<'a, T: Default + CopyTo<T>> VecLinkedListIter<'a, T> {
-    pub fn new(source: &'a mut VecLinkedList<T>, index: Option<usize>) -> Self {
-        Self { source, index }
-    }
+// impl<'a, T: Default + CopyTo<T>> VecLinkedListIter<'a, T> {
+//     pub fn new(source: &'a mut VecLinkedList<T>, index: Option<usize>) -> Self {
+//         Self { source, index }
+//     }
 
-    pub fn next(&mut self) -> Option<(usize, &mut Link<T>)> {
-        if let Some(index) = self.index {
-            let iter_back = self.source.iter_back;
-            let link = &mut self.source[index];
-            match iter_back {
-                true => self.index = link.prev,
-                false => self.index = link.next,
-            }
-            Some((index, link))
-        } else {
-            None
-        }
-    }
-}
+//     pub fn next(&mut self) -> Option<(usize, &mut Link<T>)> {
+//         if let Some(index) = self.index {
+//             let iter_back = self.source.iter_back;
+//             let link = &mut self.source.data[index];
+//             match iter_back {
+//                 true => self.index = link.prev,
+//                 false => self.index = link.next,
+//             }
+//             Some((index, link))
+//         } else {
+//             None
+//         }
+//     }
+// }
 
 #[derive(Debug, Clone)]
-pub struct VecLinkedList<T: Default + CopyTo<T>> {
-    pub data: Vec<Link<T>>,
+pub struct VecLinkedList<T: Default + CopyTo> {
+    pub data: Vec<Node<T>>,
     use_refs: bool,
     auto_link: bool,
     iter_back: bool,
-    pub first: Option<usize>,
-    pub index: Option<usize>,
-    pub last: Option<usize>,
-    next_free: Option<usize>,
+    pub first: Option<Link<T>>,
+    pub index: Option<Link<T>>,
+    pub last: Option<Link<T>>,
+    next_free: Option<Link<T>>,
 }
 
-impl<T: Default + CopyTo<T>> VecLinkedList<T> {
-    pub fn new(capacity: usize, use_refs: bool) -> Self {
+impl<T: Default + CopyTo> VecLinkedList<T> {
+    pub fn new(use_refs: bool) -> Self {
         Self {
-            data: Vec::with_capacity(capacity),
+            data: Vec::new(),
             use_refs,
             auto_link: true,
             iter_back: false,
@@ -94,9 +112,9 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
         }
     }
 
-    pub fn manually_linked(capacity: usize, use_refs: bool, iter_back: bool) -> Self {
+    pub fn manually_linked(use_refs: bool, iter_back: bool) -> Self {
         Self {
-            data: Vec::with_capacity(capacity),
+            data: Vec::new(),
             use_refs,
             auto_link: false,
             iter_back,
@@ -105,6 +123,14 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
             last: None,
             next_free: None,
         }
+    }
+
+    pub fn get_link(&mut self, index: usize) -> Link<T> {
+        unsafe { Link::new(self.data.get_unchecked_mut(index)) }
+    }
+
+    pub fn at(&mut self, index: usize) -> &mut Node<T> {
+        unsafe { self.data.get_unchecked_mut(index) }
     }
 
     pub fn take_data(&mut self) -> Self {
@@ -120,35 +146,65 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
         }
     }
 
-    fn take_free_index(&mut self) -> usize {
+    // fn take_free_index(&mut self) -> usize {
+    //     match self.next_free {
+    //         Some(index) => {
+    //             self.next_free = self.at(index).next;
+    //             index
+    //         }
+    //         None => {
+    //             let index = self.data.len();
+    //             self.data.push(Node::new());
+    //             index
+    //         }
+    //     }
+    // }
+
+    fn take_free_node(&mut self) -> Link<T> {
         match self.next_free {
-            Some(idx) => {
-                self.next_free = self[idx].next;
-                idx
+            Some(link) => {
+                self.next_free = link.get().next;
+                link
             }
             None => {
-                let idx = self.data.len();
-                self.data.push(Link::new());
-                idx
+                let index = self.data.len();
+                self.data.push(Node::new());
+                self.get_link(index)
             }
         }
     }
 
-    pub fn next(&mut self) -> Option<(usize, &mut Link<T>)> {
-        if let Some(index) = self.index {
-            let link = unsafe { self.data.get_unchecked_mut(index) };
+    // pub fn next(&mut self) -> Option<(usize, &mut T)> {
+    //     if let Some(index) = self.index {
+    //         let node = unsafe { self.data.get_unchecked_mut(index) };
+    //         match self.iter_back {
+    //             true => self.index = node.prev,
+    //             false => self.index = node.next,
+    //         }
+    //         Some((index, &mut node.value))
+    //     } else {
+    //         None
+    //     }
+    // }
+
+    pub fn next(&mut self) -> Option<Link<T>> {
+        if let Some(link) = self.index {
+            let node = link.get();
             match self.iter_back {
-                true => self.index = link.prev,
-                false => self.index = link.next,
+                true => self.index = node.prev,
+                false => self.index = node.next,
             }
-            Some((index, link))
+            Some(link)
         } else {
             None
         }
     }
 
     pub fn restart_index(&mut self) -> bool {
-        self.index = self.first;
+        self.index = match self.iter_back {
+            true => self.last,
+            false => self.first,
+        };
         self.index.is_some()
     }
 
@@ -156,48 +212,40 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
         self.iter_back = !self.iter_back;
     }
 
-    pub fn iter_from(&mut self, index: Option<usize>) -> VecLinkedListIter<'_, T> {
-        VecLinkedListIter::new(self, index)
-    }
-
-    fn private_push(&mut self, index: usize) {
-        let link = unsafe { self.data.get_unchecked_mut(index) };
+    fn push_auto_link(&mut self, link: &Link<T>) {
+        let node = link.get();
         if self.use_refs {
-            link.refs = 1;
+            node.refs += 1;
         }
         if self.first.is_none() {
-            self.first = Some(index);
+            self.first = Some(*link);
+        }
+        if self.index.is_none() {
+            self.index = Some(*link);
         }
         if let Some(last) = self.last {
-            link.prev = Some(last);
-            self[last].next = Some(index);
+            node.prev = Some(last);
+            last.get().next = Some(*link);
         }
-        self.last = Some(index);
-        if self.index.is_none() {
-            self.index = Some(index);
-        }
+        self.last = Some(*link);
     }
 
-    pub fn push(&mut self, edit: impl FnOnce(&mut T)) -> Option<usize> {
+    pub fn push(&mut self) -> Option<Link<T>> {
         if self.auto_link {
-            let index = self.take_free_index();
-            let link = unsafe { self.data.get_unchecked_mut(index) };
-            edit(&mut link.value);
-            self.private_push(index);
-            Some(index)
+            let link = self.take_free_node();
+            self.push_auto_link(&link);
+            Some(link)
         } else {
             None
         }
     }
 
-    pub fn copy(&mut self, index: usize, edit: impl FnOnce(&mut T)) -> Option<usize> {
+    pub fn copy(&mut self, orig: &Link<T>) -> Option<Link<T>> {
         if self.auto_link {
-            let idx = self.take_free_index();
-            let [orig, copy] = unsafe { self.data.get_disjoint_unchecked_mut([index, idx]) };
-            orig.value.copy_to(&mut copy.value);
-            edit(&mut copy.value);
-            self.private_push(idx);
-            Some(idx)
+            let copy = self.take_free_node();
+            orig.val().copy_to(copy.val());
+            self.push_auto_link(&copy);
+            Some(copy)
         } else {
             None
         }
@@ -205,20 +253,18 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
 
     pub fn push_with_links(
         &mut self,
-        prev: Option<usize>,
-        next: Option<usize>,
-        edit: impl FnOnce(&mut T),
-    ) -> Option<usize> {
+        prev: Option<Link<T>>,
+        next: Option<Link<T>>,
+    ) -> Option<Link<T>> {
         if !self.auto_link {
-            let index = self.take_free_index();
-            let link = unsafe { self.data.get_unchecked_mut(index) };
-            edit(&mut link.value);
+            let link = self.take_free_node();
+            let node = link.get();
             if self.use_refs {
-                link.refs = 1;
+                node.refs = 1;
             }
-            link.prev = prev;
-            link.next = next;
-            Some(index)
+            node.prev = prev;
+            node.next = next;
+            Some(link)
         } else {
             None
         }
@@ -226,83 +272,78 @@ impl<T: Default + CopyTo<T>> VecLinkedList<T> {
 
     pub fn copy_with_links(
         &mut self,
-        index: usize,
-        prev: Option<usize>,
-        next: Option<usize>,
-        edit: impl FnOnce(&mut T),
-    ) -> Option<usize> {
+        orig: &Link<T>,
+        prev: Option<Link<T>>,
+        next: Option<Link<T>>,
+    ) -> Option<Link<T>> {
         if !self.auto_link {
-            let idx = self.take_free_index();
-            let [orig, copy] = unsafe { self.data.get_disjoint_unchecked_mut([index, idx]) };
-            orig.value.copy_to(&mut copy.value);
-            edit(&mut copy.value);
+            let copy = self.take_free_node();
+            orig.val().copy_to(copy.val());
+            let node = copy.get();
             if self.use_refs {
-                copy.refs = 1;
+                node.refs = 1;
             }
-            copy.prev = prev;
-            copy.next = next;
-            Some(idx)
+            node.prev = prev;
+            node.next = next;
+            Some(copy)
         } else {
             None
         }
     }
 
-    pub fn remove(&mut self, index: usize) {
+    pub fn remove(&mut self, link: Link<T>) {
         if self.use_refs {
-            self.unref(index);
+            self.unref(link);
         } else {
-            self.free(index);
+            self.free_links(&link);
+            self.free(link);
         }
     }
 
-    fn free(&mut self, index: usize) {
-        if self.auto_link {
-            let link = &self[index];
-            let prev_link = link.prev;
-            let next_link = link.next;
-
-            if let Some(prev) = prev_link {
-                self[prev].next = next_link;
-            }
-            if let Some(next) = next_link {
-                self[next].prev = prev_link;
-            }
-
-            if self.first == Some(index) {
-                self.first = next_link;
-            }
-            if self.index == Some(index) {
-                self.index = next_link;
-            }
-            if self.last == Some(index) {
-                self.last = prev_link;
-            }
+    fn free_links(&mut self, link: &Link<T>) {
+        let node = link.get();
+        if let Some(pre) = node.prev {
+            pre.get().next = node.next;
+        }
+        if let Some(nxt) = node.next {
+            nxt.get().prev = node.prev;
         }
 
-        let link = unsafe { self.data.get_unchecked_mut(index) };
-        link.reset();
-        link.next = self.next_free;
-        self.next_free = Some(index);
+        if self.first == Some(*link) {
+            self.first = node.next;
+        }
+        if self.index == Some(*link) {
+            self.index = node.next;
+        }
+        if self.last == Some(*link) {
+            self.last = node.prev;
+        }
     }
 
-    fn unref(&mut self, index: usize) {
-        let mut idx = Some(index);
-        while let Some(i) = idx {
-            let link = unsafe { self.data.get_unchecked_mut(i) };
-            if link.refs == 1 {
-                idx = link.prev;
-                self.free(i);
+    fn free(&mut self, link: Link<T>) {
+        let node = link.get();
+        node.reset();
+        node.next = self.next_free;
+        self.next_free = Some(link);
+    }
+
+    fn unref(&mut self, link: Link<T>) {
+        let mut next_link = Some(link);
+        while let Some(l) = next_link {
+            let node = l.get();
+            if node.refs == 1 {
+                next_link = node.prev;
+                self.free(link);
             } else {
-                link.refs -= 1;
+                node.refs -= 1;
                 break;
             }
         }
     }
 
-    pub fn add_ref(&mut self, index: usize) {
+    pub fn add_ref(&mut self, link: &Link<T>) {
         if self.use_refs {
-            let link = &mut self[index];
-            link.refs += 1;
+            link.get().refs += 1;
         }
     }
 }

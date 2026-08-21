@@ -1,4 +1,4 @@
-use super::iter::Matches;
+use super::{events::Event, iter::Matches, vec_linked_list::Link};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stat {
@@ -31,7 +31,7 @@ pub enum State {
     Scope(usize),
     Save {
         ip: usize,
-        last_event: Option<usize>,
+        event: Option<Link<Event>>,
     },
 }
 

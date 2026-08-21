@@ -1,18 +1,18 @@
-use super::{types::*, vec_linked_list::*};
+use super::{events::Event, types::*, vec_linked_list::*};
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: usize,
     pub state: Vec<State>,
     pub saves: usize,
-    pub event: Option<usize>,
+    pub event: Option<Link<Event>>,
 }
 impl Thread {
     pub fn rewind(&mut self) {
         while let Some(state) = self.state.last_mut() {
-            if let State::Save { ip, last_event } = state {
+            if let State::Save { ip, event } = state {
                 self.ip = *ip;
-                self.event = *last_event;
+                self.event = *event;
                 return;
             } else {
                 self.state.pop();
@@ -39,7 +39,7 @@ impl Default for Thread {
     }
 }
 
-impl CopyTo<Thread> for Thread {
+impl CopyTo for Thread {
     fn copy_to(&self, target: &mut Self) {
         target.ip = self.ip;
         target.state.clone_from(&self.state);
@@ -56,9 +56,9 @@ pub struct Threads {
 impl Threads {
     pub fn new() -> Self {
         let mut me = Self {
-            pool: VecLinkedList::new(4, false),
+            pool: VecLinkedList::new(false),
         };
-        me.pool.push(|_| {});
+        me.pool.push();
         me
     }
 
@@ -67,36 +67,33 @@ impl Threads {
     }
 
     pub fn at(&mut self, id: usize) -> &mut Thread {
-        &mut self.pool[id].value
+        &mut self.pool.at(id).value
     }
 
-    pub fn next(&mut self) -> Option<(usize, usize)> {
-        if let Some((index, thread)) = self.pool.next() {
-            Some((index, thread.value.ip))
-        } else {
-            None
-        }
+    pub fn next(&mut self) -> Option<Link<Thread>> {
+        self.pool.next()
     }
 
     pub fn restart(&mut self) -> bool {
         self.pool.restart_index()
     }
 
-    pub fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
-        self.pool.copy(id, func);
+    pub fn fork(&mut self, link: &Link<Thread>) -> &mut Thread {
+        let fork = self.pool.copy(link).unwrap();
+        unsafe { &mut *(fork.val() as *mut Thread) }
     }
 
-    pub fn free(&mut self, id: usize) {
-        self.pool.remove(id);
+    pub fn free(&mut self, link: Link<Thread>) {
+        self.pool.remove(link);
     }
 
     pub fn kill_scope(&mut self, scope: usize) {
-        let mut index = self.pool.first;
-        while let Some(idx) = index {
-            let thread = &mut self.pool[idx];
-            index = thread.next;
-            if thread.value.state.contains(&State::Scope(scope)) {
-                self.pool.remove(idx);
+        let mut link = self.pool.first;
+        while let Some(l) = link {
+            let node = l.get();
+            link = node.next;
+            if l.val().state.contains(&State::Scope(scope)) {
+                self.pool.remove(l);
             }
         }
     }
@@ -253,7 +250,7 @@ impl Threads {
 //         }
 //     }
 
-//     pub fn fork(&mut self, id: usize, func: impl FnOnce(&mut Thread)) {
+//     pub fn fork(&mut self, id: usize) -> &mut Thread {
 //         let fork_id = match self.next_free {
 //             Some(free_id) => {
 //                 self.next_free = self.at(free_id).next_thread;
@@ -268,7 +265,6 @@ impl Threads {
 //         };
 //         let [thread, fork] = unsafe { self.pool.get_disjoint_unchecked_mut([id, fork_id]) };
 //         thread.fork_to(fork);
-//         func(fork);
 //         if let Some(last) = self.last {
 //             fork.prev_thread = Some(last);
 //             self.at(last).next_thread = Some(fork_id);
@@ -280,6 +276,7 @@ impl Threads {
 //         if self.debug {
 //             println!("    Forked {} to {} ->\n{}", id, fork_id, self.dbg());
 //         }
+//         self.at(fork_id)
 //     }
 
 //     pub fn restart(&mut self) -> bool {
