@@ -1,3 +1,91 @@
+// use super::vec_linked_list::*;
+
+// #[derive(Default, Debug, Clone, Copy)]
+// pub struct Event {
+//     pub start: bool,
+//     pub index: usize,
+// }
+
+// #[derive(Debug, Clone)]
+// pub struct EventsBuilder {
+//     list: VecLinkedList<Event>,
+// }
+
+// impl EventsBuilder {
+//     pub fn new() -> Self {
+//         Self {
+//             list: VecLinkedList::manually_linked(16, true, true),
+//         }
+//     }
+
+//     pub fn push(&mut self, start: bool, index: usize, prev: Option<usize>) -> Option<usize> {
+//         let id = self.list.push_with_links(prev, None, |e| {
+//             e.start = start;
+//             e.index = index;
+//         });
+//         id
+//     }
+
+//     pub fn unref(&mut self, index: Option<usize>) {
+//         if let Some(idx) = index {
+//             self.list.remove(idx);
+//         }
+//     }
+
+//     pub fn add_ref(&mut self, index: Option<usize>) {
+//         if let Some(idx) = index {
+//             self.list.add_ref(idx);
+//         }
+//     }
+
+//     pub fn build_from(&mut self, index: usize) -> Events {
+//         let mut last_index: Option<usize> = None;
+//         let mut event_index = Some(index);
+//         while let Some(idx) = event_index {
+//             let event = &mut self.list[idx];
+//             event.next = last_index;
+//             last_index = Some(idx);
+//             event_index = event.prev;
+//         }
+
+//         Events::new(self.list.take_data(), last_index, Some(index))
+//     }
+// }
+
+// #[derive(Debug, Clone)]
+// pub struct Events {
+//     list: VecLinkedList<Event>,
+// }
+
+// impl Events {
+//     pub fn new(mut list: VecLinkedList<Event>, first: Option<usize>, last: Option<usize>) -> Self {
+//         list.first = first;
+//         list.index = first;
+//         list.last = last;
+//         list.reverse();
+//         let me = Self { list };
+//         me
+//     }
+
+//     pub fn empty() -> Self {
+//         Self {
+//             list: VecLinkedList::new(0, false),
+//         }
+//     }
+
+//     pub fn len(&self) -> usize {
+//         self.list.data.len()
+//     }
+
+//     pub fn next(&mut self) -> Option<Event> {
+//         self.list.next().map(|(_, event)| event.value)
+//     }
+
+//     pub fn restart(&mut self) {
+//         self.list.restart_index();
+//     }
+// }
+
 #[derive(Debug, Clone, Copy)]
 pub struct EventPart {
     pub start: bool,
@@ -48,7 +136,7 @@ impl EventsBuilder {
         id
     }
 
-    pub fn build(&mut self, id: usize) -> Events {
+    pub fn build_from(&mut self, id: usize) -> Events {
         let mut last_id: Option<usize> = None;
         let mut event_id = Some(id);
         while let Some(i) = event_id {
@@ -83,6 +171,10 @@ impl Events {
             first: None,
             index: None,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.list.len()
     }
 
     pub fn next(&mut self) -> Option<Event> {

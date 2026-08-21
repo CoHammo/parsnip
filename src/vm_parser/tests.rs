@@ -25,8 +25,7 @@ fn test_vm() {
     ));
 
     println!("{:?}", parser.comms);
-    // let source = "Hello Man\nn".repeat(1);
-    let source = "# The Man\n".repeat(100);
+    let source = "# The Man\n".repeat(1000000);
 
     // parser.toggle_debug();
     let start = Instant::now();
@@ -47,22 +46,17 @@ fn test_vm() {
 
     // println!("After Building Events: {:#?}", res);
     println!("{:?}", parser.stat);
-    // println!("Threads: {:#?}", parser.threads);
-    // println!("Events: {:#?}", parser.events);
-    // println!("{:#?}", parser.ord_events);
-    println!("Best Match: {:?}", parser.best_match);
-    println!("Total Threads: {}", parser.threads.len());
     println!("{:?}", buf);
+    // println!("Threads: {:#?}", parser.threads);
+    println!("Total Events: {}", res.len());
+    println!("Total Threads: {}", parser.threads.len());
+    println!("Best Match: {:?}", parser.best_match);
     println!("{:?}", duration);
 }
 
 #[test]
-fn test_alt_compile() {
-    let parser = Parser::new(alt(vec![
-        branch("hi", true),
-        branch("him", true),
-        branch("himmel", false),
-    ]));
+fn test_compile() {
+    let parser = Parser::new(not("iter"));
 
     println!("{:?}", parser.comms);
 }

@@ -4,6 +4,7 @@ mod iter;
 mod tests;
 mod threads;
 mod types;
+mod vec_linked_list;
 
 pub use compiler::*;
 use events::*;
@@ -39,7 +40,7 @@ impl<T: Matches> Parser<T> {
 
     pub fn toggle_debug(&mut self) {
         self.debug = !self.debug;
-        self.threads.debug = self.debug;
+        // self.threads.debug = self.debug;
     }
 
     pub fn new_scope(&mut self) -> usize {
@@ -58,7 +59,7 @@ impl<T: Matches> Parser<T> {
         match self.best_match {
             Some(event_id) => {
                 self.stat = Stat::Matched;
-                self.events.build(event_id)
+                self.events.build_from(event_id)
             }
             None => {
                 self.stat = Stat::Failed;
@@ -132,9 +133,7 @@ impl<T: Matches> Parser<T> {
                         ip += 1;
                     }
                     Comm::CommitScope => {
-                        if let Some(state) = self.threads.at(id).state.pop()
-                            && let State::Scope(scope) = state
-                        {
+                        if let Some(State::Scope(scope)) = self.threads.at(id).state.pop() {
                             self.threads.kill_scope(scope);
                             ip += 1;
                         } else {

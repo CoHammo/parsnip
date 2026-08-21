@@ -24,6 +24,15 @@ pub fn tok<T: Matches>(value: impl ToComms<T>) -> Vec<Comm<T>> {
     comms
 }
 
+pub fn not<T: Matches>(value: impl ToComms<T>) -> Vec<Comm<T>> {
+    let mut comms = vec![Comm::Scope];
+    let not = value.to_comms();
+    comms.push(Comm::Branch(true, not.len() + 2, true, 1));
+    comms.extend(not);
+    comms.push(Comm::KillScope);
+    comms
+}
+
 pub fn rep<T: Matches>(value: impl ToComms<T>, mut min: usize, mut max: usize) -> Vec<Comm<T>> {
     min = match min {
         0 => 1,
