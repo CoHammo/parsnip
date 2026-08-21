@@ -14,7 +14,7 @@ fn test_vm() {
                 tok(run(vec![rep("#", 1, 6), str(" ")])),
                 tok(till("\n")),
             ])),
-            tok(till("\n")),
+            // tok(till("\n")),
         ]),
         1,
         0,
@@ -26,30 +26,29 @@ fn test_vm() {
 
     // parser.toggle_debug();
     let start = Instant::now();
-    let res = parser.parse(source.as_str());
-    let mut res_str = String::new();
+    let mut res = parser.parse(source.as_str());
+
+    let mut buf = String::new();
     let mut prev_index = 0;
-    let mut next_event = parser.first_event;
-    while let Some(event_id) = next_event {
-        let event = &parser.events[event_id];
+    while let Some(event) = res.next() {
         if event.start {
-            res_str.push('(');
+            buf.push('(');
         } else {
-            res_str.push_str(&source[prev_index..event.index]);
-            res_str.push_str("),");
+            buf.push_str(&source[prev_index..event.index]);
+            buf.push(')');
+            prev_index = event.index;
         }
-        prev_index = event.index;
-        next_event = event.next;
     }
     let duration = start.elapsed();
 
-    println!("{:?}", res);
+    // println!("After Building Events: {:#?}", res);
+    println!("{:?}", parser.stat);
     // println!("Threads: {:#?}", parser.threads);
     // println!("Events: {:#?}", parser.events);
     // println!("{:#?}", parser.ord_events);
     println!("Best Match: {:?}", parser.best_match);
-    println!("Total Threads: {}", parser.threads.pool.len());
-    println!("{:?}", res_str);
+    println!("Total Threads: {}", parser.threads.len());
+    println!("{:?}", buf);
     println!("{:?}", duration);
 }
 
