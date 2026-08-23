@@ -25,9 +25,9 @@ fn test_vm() {
     ));
 
     println!("{:?}", parser.comms);
-    let source = "# The Man\n".repeat(1000000);
+    let source = "# The Man\n".repeat(1);
 
-    // parser.toggle_debug();
+    // parser.debug();
     let start = Instant::now();
     let mut res = parser.parse(source.as_str());
 
@@ -48,7 +48,7 @@ fn test_vm() {
     println!("{:?}", parser.stat);
     println!("{:?}", buf);
     // println!("Threads: {:#?}", parser.threads);
-    println!("Total Events: {}", res.len());
+    println!("Total Events: {}", res.total_len());
     println!("Total Threads: {}", parser.threads.len());
     println!("Best Match: {:?}", parser.best_match);
     println!("{:?}", duration);

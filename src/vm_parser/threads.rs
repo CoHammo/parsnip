@@ -1,11 +1,13 @@
-use super::{events::Event, types::*, vec_linked_list::*};
+use std::ops::{Index, IndexMut};
+
+use super::{linked_vec::*, types::*};
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: usize,
     pub state: Vec<State>,
     pub saves: usize,
-    pub event: Option<Link<Event>>,
+    pub event: usize,
 }
 impl Thread {
     pub fn rewind(&mut self) {
@@ -34,68 +36,76 @@ impl Default for Thread {
             ip: 0,
             state: Vec::with_capacity(8),
             saves: 0,
-            event: None,
+            event: 0,
         }
-    }
-}
-
-impl CopyTo for Thread {
-    fn copy_to(&self, target: &mut Self) {
-        target.ip = self.ip;
-        target.state.clone_from(&self.state);
-        target.saves = self.saves;
-        target.event = self.event;
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Threads {
-    pool: VecLinkedList<Thread>,
+    pool: LinkedVec<Thread>,
 }
 
 impl Threads {
     pub fn new() -> Self {
         let mut me = Self {
-            pool: VecLinkedList::new(false),
+            pool: LinkedVec::new(),
         };
-        me.pool.push();
+        me.pool.push(|_| {});
         me
     }
 
     pub fn len(&self) -> usize {
-        self.pool.data.len()
+        self.pool.nodes.len()
     }
 
-    pub fn at(&mut self, id: usize) -> &mut Thread {
-        &mut self.pool.at(id).value
-    }
-
-    pub fn next(&mut self) -> Option<Link<Thread>> {
-        self.pool.next()
+    pub fn next(&mut self) -> Option<(usize, usize)> {
+        self.pool.next().map(|(id, t)| (id, t.ip))
     }
 
     pub fn restart(&mut self) -> bool {
         self.pool.restart_index()
     }
 
-    pub fn fork(&mut self, link: &Link<Thread>) -> &mut Thread {
-        let fork = self.pool.copy(link).unwrap();
-        unsafe { &mut *(fork.val() as *mut Thread) }
+    pub fn fork(&mut self, id: usize, with: impl FnOnce(&mut Thread)) -> usize {
+        let fork_id = self.pool.push(|_| {}).unwrap();
+        let [orig, fork] = self.pool.get_multi([id, fork_id]);
+        fork.ip = orig.ip;
+        fork.state.clone_from(&orig.state);
+        fork.saves = orig.saves;
+        fork.event = orig.event;
+        with(fork);
+        fork_id
     }
 
-    pub fn free(&mut self, link: Link<Thread>) {
-        self.pool.remove(link);
+    pub fn kill(&mut self, id: usize) {
+        self.pool.remove(id);
     }
 
-    pub fn kill_scope(&mut self, scope: usize) {
-        let mut link = self.pool.first;
-        while let Some(l) = link {
-            let node = l.get();
-            link = node.next;
-            if l.val().state.contains(&State::Scope(scope)) {
-                self.pool.remove(l);
+    pub fn kill_scope(&mut self, scope: usize, mut on_kill: impl FnMut(&Thread)) {
+        let mut index = self.pool.first;
+        while index != 0 {
+            let idx = index;
+            index = self.pool[idx].next;
+            if self.pool[idx].value.state.contains(&State::Scope(scope)) {
+                on_kill(&self.pool[idx].value);
+                self.pool.remove(idx);
             }
         }
+    }
+}
+
+impl Index<usize> for Threads {
+    type Output = Thread;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.pool[index].value
+    }
+}
+
+impl IndexMut<usize> for Threads {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.pool[index].value
     }
 }
 

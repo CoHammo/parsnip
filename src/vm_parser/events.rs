@@ -1,11 +1,4 @@
-use super::vec_linked_list::*;
-
-impl CopyTo for Event {
-    fn copy_to(&self, target: &mut Self) {
-        target.start = self.start;
-        target.index = self.index;
-    }
-}
+use super::linked_vec::*;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Event {
@@ -15,81 +8,80 @@ pub struct Event {
 
 #[derive(Debug, Clone)]
 pub struct EventsBuilder {
-    list: VecLinkedList<Event>,
+    list: LinkedVec<Event>,
 }
 
 impl EventsBuilder {
     pub fn new() -> Self {
         Self {
-            list: VecLinkedList::manually_linked(true, true),
+            list: LinkedVec::with_refs(),
         }
     }
 
-    pub fn push(&mut self, start: bool, index: usize, prev: Option<Link<Event>>) -> Link<Event> {
-        let link = self.list.push_with_links(prev, None).unwrap();
-        let event = link.val();
-        event.start = start;
-        event.index = index;
-        link
+    pub fn add(&mut self, start: bool, index: usize, prev: usize) -> usize {
+        self.list
+            .ref_push(prev, |event| {
+                event.start = start;
+                event.index = index;
+            })
+            .unwrap()
     }
 
-    pub fn unref(&mut self, link: Option<Link<Event>>) {
-        if let Some(l) = link {
-            self.list.remove(l);
-        }
+    pub fn upref(&mut self, id: usize) {
+        self.list.upref(id);
     }
 
-    pub fn add_ref(&mut self, link: Option<Link<Event>>) {
-        if let Some(l) = link {
-            self.list.add_ref(&l);
-        }
+    pub fn unref(&mut self, id: usize) {
+        self.list.unref(id);
     }
 
-    pub fn build_from(&mut self, link: &Link<Event>) -> Events {
-        let mut last_link: Option<Link<Event>> = None;
-        let mut next_link = Some(*link);
-        while let Some(l) = next_link {
-            let node = l.get();
-            node.next = last_link;
-            last_link = Some(l);
-            next_link = node.prev;
+    pub fn build_from(&mut self, id: usize) -> Events {
+        let mut last = 0;
+        let mut index = id;
+        let mut len = 0;
+        while index != 0 {
+            len += 1;
+            let node = &mut self.list[index];
+            node.next = last;
+            last = index;
+            index = node.prev;
         }
-
-        Events::new(self.list.take_data(), last_link, Some(*link))
+        Events::new(self.list.take(), last, id, len)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Events {
-    list: VecLinkedList<Event>,
+    list: LinkedVec<Event>,
+    valid_len: usize,
 }
 
 impl Events {
-    pub fn new(
-        mut list: VecLinkedList<Event>,
-        first: Option<Link<Event>>,
-        last: Option<Link<Event>>,
-    ) -> Self {
+    pub fn new(mut list: LinkedVec<Event>, first: usize, last: usize, valid_len: usize) -> Self {
         list.first = first;
         list.index = first;
         list.last = last;
         list.reverse();
-        let me = Self { list };
-        me
+        Self { list, valid_len }
     }
 
     pub fn empty() -> Self {
         Self {
-            list: VecLinkedList::new(false),
+            list: LinkedVec::new(),
+            valid_len: 0,
         }
     }
 
     pub fn len(&self) -> usize {
-        self.list.data.len()
+        self.valid_len
+    }
+
+    pub fn total_len(&self) -> usize {
+        self.list.nodes.len()
     }
 
     pub fn next(&mut self) -> Option<Event> {
-        self.list.next().map(|link| *link.val())
+        self.list.next().map(|(_, event)| *event)
     }
 
     pub fn restart(&mut self) {
