@@ -6,7 +6,6 @@ fn test_vm() {
     // let mut parser = Parser::new(rep(run(vec![tok("Hello "), tok("Man\n")]), 1, 0));
     // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
     // let mut parser = Parser::new(rep(tok(till("\n")), 1, 0));
-    // let mut parser = Parser::new(rep(alt(vec![tok("Hello "), tok("World!\n")]), 1, 0));
 
     let mut parser = Parser::new(rep(
         alt(vec![
@@ -18,6 +17,7 @@ fn test_vm() {
                 ])),
                 true,
             ),
+            branch(tok(run(vec![tok("> "), commit(), tok(till("\n"))])), true),
             branch(tok(till("\n")), false),
         ]),
         1,
@@ -25,7 +25,7 @@ fn test_vm() {
     ));
 
     println!("{:?}", parser.comms);
-    let source = "# The Man\n".repeat(1);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(715000);
 
     // parser.debug();
     let start = Instant::now();
@@ -46,7 +46,7 @@ fn test_vm() {
 
     // println!("After Building Events: {:#?}", res);
     println!("{:?}", parser.stat);
-    println!("{:?}", buf);
+    // println!("{:?}", buf);
     // println!("Threads: {:#?}", parser.threads);
     println!("Total Events: {}", res.total_len());
     println!("Total Threads: {}", parser.threads.len());

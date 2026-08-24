@@ -1,9 +1,8 @@
+use super::*;
 use std::{
     ops::{Bound, RangeBounds},
     str::Bytes,
 };
-
-use super::types::*;
 
 pub trait Matches: Default + std::fmt::Debug + Clone {
     fn matches(&self, other: &Self) -> bool;

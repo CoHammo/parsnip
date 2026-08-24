@@ -1,24 +1,49 @@
 pub mod compiler;
 mod events;
 mod iter;
-mod linked_vec;
+mod scopes;
+mod state;
 mod tests;
 mod threads;
-mod types;
 
 pub use compiler::*;
 use events::*;
 use iter::*;
-use linked_vec::*;
+use scopes::*;
+use state::*;
 use threads::*;
-use types::*;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Stat {
+    Running,
+    Matched,
+    Failed,
+}
+
+#[derive(Debug, Clone)]
+pub enum Comm<T: Matches> {
+    Matched,
+    Match(T),
+    MatchAny,
+    Jump(bool, usize),
+    Branch(bool, usize, bool, usize),
+    Scope,
+    CommitScope,
+    KillScope,
+    Tok(bool),
+    Save,
+    Unsave,
+    StartLoop,
+    EndLoop(usize, usize),
+}
 
 pub struct Parser<T: Matches> {
     stat: Stat,
     debug: bool,
     comms: Vec<Comm<T>>,
     threads: Threads,
-    next_scope: usize,
+    state: StateStack,
+    scopes: Scopes,
     // seen: HashSet<usize>,
     events: EventsBuilder,
     best_match: Option<usize>,
@@ -32,7 +57,8 @@ impl<T: Matches> Parser<T> {
             debug: false,
             comms,
             threads: Threads::new(),
-            next_scope: 0,
+            state: StateStack::new(),
+            scopes: Scopes::new(),
             // seen: HashSet::new(),
             events: EventsBuilder::new(),
             best_match: None,
@@ -42,12 +68,6 @@ impl<T: Matches> Parser<T> {
     pub fn debug(&mut self) {
         self.debug = true
         // self.threads.debug = self.debug;
-    }
-
-    pub fn new_scope(&mut self) -> usize {
-        let s = self.next_scope;
-        self.next_scope += 1;
-        s
     }
 
     pub fn parse<I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {
@@ -73,6 +93,13 @@ impl<T: Matches> Parser<T> {
         while let Some((id, mut ip)) = self.threads.next()
             && self.stat == Stat::Running
         {
+            let th = &mut self.threads[id];
+            if self.scopes.is_dead(th.scope.val()) {
+                self.state.unref(th.state);
+                self.events.unref(th.event);
+                self.threads.kill(id);
+                continue;
+            }
             loop {
                 if self.debug {
                     println!(
@@ -82,7 +109,9 @@ impl<T: Matches> Parser<T> {
                 }
                 match unsafe { self.comms.get_unchecked(ip) } {
                     Comm::Matched => {
-                        self.best_match = Some(self.threads[id].event);
+                        let thread = &mut self.threads[id];
+                        self.best_match = Some(thread.event);
+                        self.state.unref(thread.state);
                         self.threads.kill(id);
                         break;
                     }
@@ -96,14 +125,18 @@ impl<T: Matches> Parser<T> {
                                     println!("    Rewinding...");
                                 }
                                 let event = thread.event;
-                                thread.rewind();
+                                // let scope = thread.scope.val();
+                                thread.rewind(&mut self.state);
+                                // self.scopes.kill_scopes(thread.scope.diff(scope));
                                 self.events.upref(thread.event);
                                 self.events.unref(event);
                             } else {
+                                self.state.unref(thread.state);
                                 self.events.unref(thread.event);
                                 self.threads.kill(id);
                             }
                         } else {
+                            self.state.unref(thread.state);
                             self.events.unref(thread.event);
                             self.threads.kill(id);
                         }
@@ -120,27 +153,25 @@ impl<T: Matches> Parser<T> {
                         }
                     }
                     &Comm::Branch(up1, num1, up2, num2) => {
-                        self.threads.fork(id, |fork| {
-                            fork.ip = match up2 {
-                                true => ip + num2,
-                                false => ip - num2,
-                            };
-                            self.events.upref(fork.event);
-                        });
+                        let fork = self.threads.fork(id);
+                        fork.ip = match up2 {
+                            true => ip + num2,
+                            false => ip - num2,
+                        };
+                        self.state.upref(fork.state);
+                        self.events.upref(fork.event);
                         ip = match up1 {
                             true => ip + num1,
                             false => ip - num1,
                         };
                     }
                     Comm::Scope => {
-                        let scope = self.new_scope();
-                        self.threads[id].state.push(State::Scope(scope));
+                        self.threads[id].scope.add_scope(self.scopes.next());
                         ip += 1;
                     }
                     Comm::CommitScope => {
-                        if let Some(State::Scope(scope)) = self.threads[id].state.pop() {
-                            self.threads
-                                .kill_scope(scope, |t| self.events.unref(t.event));
+                        if let Some(sid) = self.threads[id].scope.pop() {
+                            self.scopes.kill(sid);
                             ip += 1;
                         } else {
                             println!("Tried to commit a scope that doesn't exist");
@@ -149,28 +180,33 @@ impl<T: Matches> Parser<T> {
                         }
                     }
                     Comm::KillScope => {
-                        if let Some(State::Scope(scope)) = self.threads[id].state.last() {
-                            self.threads
-                                .kill_scope(*scope, |t| self.events.unref(t.event));
-                            break;
+                        if let Some(sid) = self.threads[id].scope.last() {
+                            self.scopes.kill(sid);
                         } else {
                             println!("Tried to kill a scope that doesn't exist");
                             self.stat = Stat::Failed;
-                            break;
                         }
+                        break;
                     }
                     Comm::Save => {
                         ip += 1;
                         let thread = &mut self.threads[id];
-                        thread.state.push(State::Save {
-                            ip,
-                            event: thread.event,
-                        });
+                        thread.state = self.state.push(
+                            State::Save {
+                                ip,
+                                event: thread.event,
+                                scope: thread.scope,
+                            },
+                            thread.state,
+                        );
                         thread.saves += 1;
                     }
                     Comm::Unsave => {
                         let thread = &mut self.threads[id];
-                        if let Some(State::Save { .. }) = thread.state.pop() {
+                        if let (prev, state) = self.state.pop(thread.state)
+                            && let State::Save { .. } = state
+                        {
+                            thread.state = prev;
                             thread.saves -= 1;
                             ip += 1;
                         } else {
@@ -181,29 +217,39 @@ impl<T: Matches> Parser<T> {
                     }
                     &Comm::Tok(start) => {
                         let thread = &mut self.threads[id];
-                        thread.event = self.events.add(start, snip.index, thread.event);
+                        thread.event = self.events.push(start, snip.index, thread.event);
                         ip += 1;
                     }
                     Comm::StartLoop => {
                         ip += 1;
-                        self.threads[id].state.push(State::Loop(Loop::new(ip)));
+                        let thread = &mut self.threads[id];
+                        thread.state = self.state.push(State::Loop(Loop::new(ip)), thread.state);
                     }
                     &Comm::EndLoop(min, max) => {
                         let thread = &mut self.threads[id];
-                        if let Some(State::Loop(loo)) = thread.state.last_mut() {
-                            loo.count += 1;
-                            if loo.count == max {
-                                thread.state.pop();
+                        if let Some(State::Loop(_)) = self.state.check(thread.state) {
+                            let mut start: usize = 0;
+                            let mut count: usize = 0;
+                            let (state_id, st) = self.state.edit(thread.state);
+                            thread.state = state_id;
+                            if let State::Loop(loo) = st {
+                                start = loo.start;
+                                loo.count += 1;
+                                count = loo.count;
+                            }
+                            if count == max {
+                                let (stid, _) = self.state.pop(thread.state);
+                                thread.state = stid;
                                 ip += 1;
                             } else {
-                                if loo.count >= min {
-                                    let fork_ip = ip + 1;
-                                    ip = loo.start;
-                                    self.threads.fork(id, |fork| {
-                                        fork.ip = fork_ip;
-                                        fork.state.pop();
-                                        self.events.upref(fork.event);
-                                    });
+                                let fork_ip = ip + 1;
+                                ip = start;
+                                if count >= min {
+                                    let fork = self.threads.fork(id);
+                                    fork.ip = fork_ip;
+                                    fork.state = self.state.before(fork.state);
+                                    self.state.upref(fork.state);
+                                    self.events.upref(fork.event)
                                 }
                             }
                         } else {

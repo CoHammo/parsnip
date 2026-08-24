@@ -1,196 +1,152 @@
-use super::linked_vec::*;
-
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Event {
     pub start: bool,
     pub index: usize,
+    prev: usize,
+    next: usize,
+    refs: usize,
 }
 
-#[derive(Debug, Clone)]
+impl Event {
+    pub fn new(start: bool, index: usize, prev: usize) -> Self {
+        Self {
+            start,
+            index,
+            prev,
+            next: 0,
+            refs: 1,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            start: false,
+            index: 0,
+            prev: 0,
+            next: 0,
+            refs: 0,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct EventsBuilder {
-    list: LinkedVec<Event>,
+    stack: Vec<Event>,
+    free: usize,
 }
 
 impl EventsBuilder {
     pub fn new() -> Self {
         Self {
-            list: LinkedVec::with_refs(),
+            stack: vec![Event::empty()],
+            free: 0,
         }
     }
 
-    pub fn add(&mut self, start: bool, index: usize, prev: usize) -> usize {
-        self.list
-            .ref_push(prev, |event| {
-                event.start = start;
-                event.index = index;
-            })
-            .unwrap()
+    fn at(&mut self, index: usize) -> &mut Event {
+        unsafe { self.stack.get_unchecked_mut(index) }
+    }
+
+    pub fn push(&mut self, start: bool, index: usize, prev: usize) -> usize {
+        let mut id = self.free;
+        if self.free == 0 {
+            id = self.stack.len();
+            self.stack.push(Event::new(start, index, prev));
+        } else {
+            self.free = self.at(id).next;
+            let event = self.at(id);
+            event.start = start;
+            event.index = index;
+            event.prev = prev;
+            event.next = 0;
+            event.refs = 1;
+        }
+        id
     }
 
     pub fn upref(&mut self, id: usize) {
-        self.list.upref(id);
+        self.at(id).refs += 1;
     }
 
-    pub fn unref(&mut self, id: usize) {
-        self.list.unref(id);
-    }
-
-    pub fn build_from(&mut self, id: usize) -> Events {
-        let mut last = 0;
-        let mut index = id;
-        let mut len = 0;
-        while index != 0 {
-            len += 1;
-            let node = &mut self.list[index];
-            node.next = last;
-            last = index;
-            index = node.prev;
+    pub fn unref(&mut self, mut id: usize) {
+        while id != 0 {
+            let free = self.free;
+            let event = self.at(id);
+            if event.refs == 1 {
+                let next = event.prev;
+                event.refs = 0;
+                event.prev = 0;
+                event.next = free;
+                self.free = id;
+                id = next;
+            } else {
+                event.refs -= 1;
+                break;
+            }
         }
-        Events::new(self.list.take(), last, id, len)
+    }
+
+    pub fn build_from(&mut self, mut id: usize) -> Events {
+        let mut last = 0;
+        let mut len = 0;
+        while id != 0 {
+            let event = self.at(id);
+            event.next = last;
+            last = id;
+            id = event.prev;
+            len += 1;
+        }
+
+        Events::new(std::mem::take(&mut self.stack), last, len)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Events {
-    list: LinkedVec<Event>,
+    stack: Vec<Event>,
+    first: usize,
+    index: usize,
     valid_len: usize,
 }
 
 impl Events {
-    pub fn new(mut list: LinkedVec<Event>, first: usize, last: usize, valid_len: usize) -> Self {
-        list.first = first;
-        list.index = first;
-        list.last = last;
-        list.reverse();
-        Self { list, valid_len }
+    pub fn new(stack: Vec<Event>, first: usize, valid_len: usize) -> Self {
+        Self {
+            stack,
+            first,
+            index: first,
+            valid_len,
+        }
     }
 
     pub fn empty() -> Self {
         Self {
-            list: LinkedVec::new(),
+            stack: Vec::new(),
+            first: 0,
+            index: 0,
             valid_len: 0,
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn valid_len(&self) -> usize {
         self.valid_len
     }
 
     pub fn total_len(&self) -> usize {
-        self.list.nodes.len()
+        self.stack.len()
     }
 
-    pub fn next(&mut self) -> Option<Event> {
-        self.list.next().map(|(_, event)| *event)
+    fn at(&self, index: usize) -> &Event {
+        unsafe { self.stack.get_unchecked(index) }
     }
 
-    pub fn restart(&mut self) {
-        self.list.restart_index();
+    pub fn next(&mut self) -> Option<&Event> {
+        if self.index != 0 {
+            let index = self.index;
+            self.index = self.at(index).next;
+            Some(self.at(index))
+        } else {
+            None
+        }
     }
 }
-
-// #[derive(Debug, Clone, Copy)]
-// pub struct EventPart {
-//     pub start: bool,
-//     pub index: usize,
-//     prev: Option<usize>,
-//     next: Option<usize>,
-// }
-
-// impl EventPart {
-//     pub fn new(start: bool, index: usize, prev: Option<usize>) -> Self {
-//         Self {
-//             start,
-//             index,
-//             prev,
-//             next: None,
-//         }
-//     }
-
-//     pub fn get(&self) -> Event {
-//         Event {
-//             start: self.start,
-//             index: self.index,
-//         }
-//     }
-// }
-
-// #[derive(Debug, Clone, Copy)]
-// pub struct Event {
-//     pub start: bool,
-//     pub index: usize,
-// }
-
-// #[derive(Debug, Clone)]
-// pub struct EventsBuilder {
-//     list: Vec<EventPart>,
-// }
-
-// impl EventsBuilder {
-//     pub fn new() -> Self {
-//         Self {
-//             list: Vec::with_capacity(16),
-//         }
-//     }
-
-//     pub fn push(&mut self, start: bool, index: usize, prev: Option<usize>) -> usize {
-//         let id = self.list.len();
-//         self.list.push(EventPart::new(start, index, prev));
-//         id
-//     }
-
-//     pub fn build_from(&mut self, id: usize) -> Events {
-//         let mut last_id: Option<usize> = None;
-//         let mut event_id = Some(id);
-//         while let Some(i) = event_id {
-//             let event = unsafe { self.list.get_unchecked_mut(i) };
-//             event.next = last_id;
-//             last_id = event_id;
-//             event_id = event.prev;
-//         }
-//         Events::new(std::mem::take(&mut self.list), last_id)
-//     }
-// }
-
-// #[derive(Debug, Clone)]
-// pub struct Events {
-//     list: Vec<EventPart>,
-//     first: Option<usize>,
-//     index: Option<usize>,
-// }
-
-// impl Events {
-//     pub fn new(events: Vec<EventPart>, first: Option<usize>) -> Self {
-//         Self {
-//             list: events,
-//             first,
-//             index: first,
-//         }
-//     }
-
-//     pub fn empty() -> Self {
-//         Self {
-//             list: Vec::new(),
-//             first: None,
-//             index: None,
-//         }
-//     }
-
-//     pub fn len(&self) -> usize {
-//         self.list.len()
-//     }
-
-//     pub fn next(&mut self) -> Option<Event> {
-//         if let Some(i) = self.index {
-//             let event = unsafe { self.list.get_unchecked(i) };
-//             self.index = event.next;
-//             Some(event.get())
-//         } else {
-//             None
-//         }
-//     }
-
-//     pub fn reset(&mut self) {
-//         self.index = self.first;
-//     }
-// }
