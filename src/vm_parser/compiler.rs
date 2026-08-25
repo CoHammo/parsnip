@@ -56,6 +56,16 @@ pub fn run<T: Matches>(values: Vec<impl ToComms<T>>) -> Vec<Comm<T>> {
     all
 }
 
+pub fn till2<T: Matches>(values: impl ToComms<T>) -> Vec<Comm<T>> {
+    let mut comms = vec![Comm::Scope];
+    let value = values.to_comms();
+    comms.push(Comm::Branch(true, 3, true, 1));
+    comms.extend(vec![Comm::MatchAny, Comm::Jump(false, 2)]);
+    comms.extend(value);
+    comms.push(Comm::CommitScope);
+    comms
+}
+
 pub fn till<T: Matches>(values: impl ToComms<T>) -> Vec<Comm<T>> {
     let mut comms = vec![Comm::Save];
     comms.extend(values.to_comms());
@@ -92,13 +102,12 @@ pub fn alt<T: Matches>(mut branches: Vec<Branch<T>>) -> Vec<Comm<T>> {
         }
     }
 
-    let mut branches_left: usize = num_branches - 2;
     let mut len: usize = 0;
     for (i, branch) in branches.iter_mut().enumerate() {
         if i != num_branches - 1 {
+            let branches_left = num_branches - 2 - i;
             len += branch.len;
             comms.push(Comm::Branch(true, 1, true, len + branches_left + 1));
-            branches_left -= 1;
 
             let add = if branch.commits { 2 } else { 1 };
             branch.comms.push(Comm::Jump(true, total_len - len + add));

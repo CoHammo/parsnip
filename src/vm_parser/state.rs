@@ -74,7 +74,7 @@ impl StateStack {
         }
     }
 
-    pub fn push(&mut self, state: State, prev: usize) -> usize {
+    pub fn push_state(&mut self, state: State, prev: usize) -> usize {
         let mut id = self.free;
         if self.free == 0 {
             id = self.stack.len();
@@ -138,7 +138,7 @@ impl StateStack {
             let prev = node.prev;
             let state = node.state.clone();
             self.at(prev).refs += 1;
-            let branch_id = self.push(state, prev);
+            let branch_id = self.push_state(state, prev);
             (branch_id, &mut self.at(branch_id).state)
         } else {
             (id, &mut self.at(id).state)

@@ -47,7 +47,7 @@ impl EventsBuilder {
         unsafe { self.stack.get_unchecked_mut(index) }
     }
 
-    pub fn push(&mut self, start: bool, index: usize, prev: usize) -> usize {
+    pub fn push_event(&mut self, start: bool, index: usize, prev: usize) -> usize {
         let mut id = self.free;
         if self.free == 0 {
             id = self.stack.len();
@@ -104,7 +104,6 @@ impl EventsBuilder {
 #[derive(Debug)]
 pub struct Events {
     stack: Vec<Event>,
-    first: usize,
     index: usize,
     valid_len: usize,
 }
@@ -113,7 +112,6 @@ impl Events {
     pub fn new(stack: Vec<Event>, first: usize, valid_len: usize) -> Self {
         Self {
             stack,
-            first,
             index: first,
             valid_len,
         }
@@ -122,7 +120,6 @@ impl Events {
     pub fn empty() -> Self {
         Self {
             stack: Vec::new(),
-            first: 0,
             index: 0,
             valid_len: 0,
         }

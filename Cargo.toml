@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 icu_normalizer = "2.2.0"
@@ -16,8 +16,9 @@ icu_normalizer = "2.2.0"
 # wasmtime = {version = "45.0.1", default-features = false, features = ["runtime"]}
 
 [profile.release]
+debug = true
 lto = true
 codegen-units = 1
 opt-level = 3
 panic = "abort"
-strip = true
+strip = false

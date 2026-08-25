@@ -1,4 +1,4 @@
-use super::{scopes::Scope, state::*};
+use super::scopes::Scope;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
@@ -26,36 +26,23 @@ impl Thread {
         }
     }
 
-    // pub fn rewind(&mut self) {
-    //     while let Some(state) = self.state.last() {
-    //         if let &State::Save { ip, event, scope } = state {
+    // pub fn rewind(&mut self, state: &mut StateStack) {
+    //     while let Some(st) = state.check(self.state) {
+    //         if let &State::Save { ip, event, scope } = st {
     //             self.ip = ip;
     //             self.event = event;
     //             self.scope = scope;
     //             return;
     //         } else {
-    //             self.state.pop();
+    //             let (prev, _) = state.pop(self.state);
+    //             self.state = prev;
     //         }
     //     }
     // }
 
-    pub fn rewind(&mut self, state: &mut StateStack) {
-        while let Some(st) = state.check(self.state) {
-            if let &State::Save { ip, event, scope } = st {
-                self.ip = ip;
-                self.event = event;
-                self.scope = scope;
-                return;
-            } else {
-                let (prev, _) = state.pop(self.state);
-                self.state = prev;
-            }
-        }
-    }
-
     pub fn dbg(&self) -> String {
         format!(
-            "Thread(ip={}, saves={}, ev={:?}",
+            "Thread(ip={}, saves={}, event={:?})",
             self.ip, self.saves, self.event
         )
     }
@@ -85,7 +72,7 @@ impl Threads {
         self.pool.len()
     }
 
-    pub fn next(&mut self) -> Option<(usize, usize)> {
+    pub fn next_thread(&mut self) -> Option<(usize, usize)> {
         if self.index != 0 {
             let id = self.index;
             self.index = self[id].next;
@@ -114,7 +101,7 @@ impl Threads {
         id
     }
 
-    pub fn fork(&mut self, id: usize) -> &mut Thread {
+    pub fn fork_thread(&mut self, id: usize) -> &mut Thread {
         let fork_id = self.allocate();
         let [orig, fork] = unsafe { self.pool.get_disjoint_unchecked_mut([id, fork_id]) };
         fork.ip = orig.ip;

@@ -1,41 +1,37 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Scopes {
     scopes: u64,
-    id: u8,
-    wrapped: bool,
+    refs: [u8; 64],
 }
 
 impl Scopes {
     pub fn new() -> Self {
         Self {
             scopes: 0,
-            id: 0,
-            wrapped: false,
+            refs: [0; 64],
         }
     }
 
-    pub fn next(&mut self) -> u8 {
-        if self.id == 64 {
-            self.wrapped = true;
-            self.id = 0;
+    pub fn next_scope(&mut self) -> u8 {
+        let mut id: u8 = 0;
+        for i in 0..64 {
+            if self.refs[i] == 0 {
+                self.refs[i] = 1;
+                id = i as u8;
+                break;
+            } else if i == 63 {
+                panic!("Parsing Scopes Overflowed!");
+            }
         }
-
-        let mask = 1u64 << self.id;
-        if self.wrapped && ((self.scopes & mask) != 0) {
-            panic!("Parsing scopes overflowed at {}", self.id);
-        }
-        self.scopes |= mask;
-
-        self.id += 1;
-        self.id - 1
+        self.scopes |= 1u64 << id;
+        id
     }
 
-    pub fn kill(&mut self, id: u8) {
+    pub fn kill_scope(&mut self, id: u8, unref: bool) {
         self.scopes &= !(1u64 << id);
-    }
-
-    pub fn kill_scopes(&mut self, scope: u64) {
-        self.scopes &= !scope;
+        if unref {
+            self.refs[id as usize] -= 1;
+        }
     }
 
     pub fn is_dead(&self, scope: u64) -> bool {
@@ -43,6 +39,24 @@ impl Scopes {
             false
         } else {
             (scope & self.scopes) != scope
+        }
+    }
+
+    pub fn upref_scopes(&mut self, mut scopes: u64) {
+        while scopes != 0 {
+            let id = scopes.trailing_zeros();
+            // println!("uprefing scope {}", id);
+            self.refs[id as usize] += 1;
+            scopes &= !(1u64 << id);
+        }
+    }
+
+    pub fn unref_scopes(&mut self, mut scopes: u64) {
+        while scopes != 0 {
+            let id = scopes.trailing_zeros();
+            // println!("unrefing scope {}", id);
+            self.refs[id as usize] -= 1;
+            scopes &= !(1u64 << id);
         }
     }
 }
@@ -96,9 +110,5 @@ impl Scope {
         } else {
             None
         }
-    }
-
-    pub fn diff(&self, other: u64) -> u64 {
-        self.val ^ other
     }
 }

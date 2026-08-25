@@ -13,19 +13,19 @@ fn test_vm() {
                 tok(run(vec![
                     tok(run(vec![rep("#", 1, 6), str(" ")])),
                     commit(),
-                    tok(till("\n")),
+                    tok(till2("\n")),
                 ])),
                 true,
             ),
-            branch(tok(run(vec![tok("> "), commit(), tok(till("\n"))])), true),
-            branch(tok(till("\n")), false),
+            branch(tok(run(vec![tok("> "), commit(), tok(till2("\n"))])), true),
+            branch(tok(till2("\n")), false),
         ]),
         1,
         0,
     ));
 
-    println!("{:?}", parser.comms);
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(715000);
+    // println!("{:?}", parser.comms);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(1000);
 
     // parser.debug();
     let start = Instant::now();
@@ -45,11 +45,11 @@ fn test_vm() {
     let duration = start.elapsed();
 
     // println!("After Building Events: {:#?}", res);
-    println!("{:?}", parser.stat);
-    // println!("{:?}", buf);
+    // println!("{:?}", parser.stat);
+    println!("{:?}", buf);
     // println!("Threads: {:#?}", parser.threads);
     println!("Total Events: {}", res.total_len());
-    println!("Total Threads: {}", parser.threads.len());
+    // println!("Total Threads: {}", parser.threads.len());
     println!("Best Match: {:?}", parser.best_match);
     println!("{:?}", duration);
 }
