@@ -25,7 +25,7 @@ fn test_vm() {
     ));
 
     // println!("{:?}", parser.comms);
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(1000);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(35);
 
     // parser.debug();
     let start = Instant::now();

@@ -4,7 +4,7 @@ pub struct Event {
     pub index: usize,
     prev: usize,
     next: usize,
-    refs: usize,
+    refs: u16,
 }
 
 impl Event {
@@ -65,7 +65,11 @@ impl EventsBuilder {
     }
 
     pub fn upref(&mut self, id: usize) {
-        self.at(id).refs += 1;
+        let event = self.at(id);
+        event.refs += 1;
+        if event.refs == u16::MAX {
+            panic!("Event Ref Overflow!!");
+        }
     }
 
     pub fn unref(&mut self, mut id: usize) {

@@ -4,19 +4,18 @@ use std::ops::{Index, IndexMut};
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: usize,
-    pub state: usize,
+    pub state: u16,
     pub scope: Scope,
-    pub saves: usize,
+    pub saves: u16,
     pub event: usize,
-    prev: usize,
-    next: usize,
+    prev: u16,
+    next: u16,
 }
 
 impl Thread {
     pub fn new() -> Self {
         Self {
             ip: 0,
-            // state: Vec::new(),
             state: 0,
             scope: Scope::new(),
             saves: 0,
@@ -51,10 +50,10 @@ impl Thread {
 #[derive(Debug)]
 pub struct Threads {
     pool: Vec<Thread>,
-    first: usize,
-    index: usize,
-    last: usize,
-    free: usize,
+    first: u16,
+    index: u16,
+    last: u16,
+    free: u16,
 }
 
 impl Threads {
@@ -68,11 +67,11 @@ impl Threads {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.pool.len()
+    pub fn len(&self) -> u16 {
+        self.pool.len() as u16
     }
 
-    pub fn next_thread(&mut self) -> Option<(usize, usize)> {
+    pub fn next_thread(&mut self) -> Option<(u16, usize)> {
         if self.index != 0 {
             let id = self.index;
             self.index = self[id].next;
@@ -87,23 +86,27 @@ impl Threads {
         self.index != 0
     }
 
-    fn allocate(&mut self) -> usize {
-        let mut id = self.free;
-        match self.free {
-            0 => {
-                id = self.pool.len();
-                self.pool.push(Thread::new());
+    fn allocate(&mut self) -> u16 {
+        if self.free == 0 {
+            let id = self.pool.len() as u16;
+            if id == u16::MAX {
+                panic!("Thread Pool Overflow!!");
             }
-            _ => {
-                self.free = self[id].next;
-            }
+            self.pool.push(Thread::new());
+            id
+        } else {
+            let id = self.free;
+            self.free = self[id].next;
+            id
         }
-        id
     }
 
-    pub fn fork_thread(&mut self, id: usize) -> &mut Thread {
+    pub fn fork_thread(&mut self, id: u16) -> &mut Thread {
         let fork_id = self.allocate();
-        let [orig, fork] = unsafe { self.pool.get_disjoint_unchecked_mut([id, fork_id]) };
+        let [orig, fork] = unsafe {
+            self.pool
+                .get_disjoint_unchecked_mut([id as usize, fork_id as usize])
+        };
         fork.ip = orig.ip;
         fork.state = orig.state;
         fork.scope = orig.scope;
@@ -126,7 +129,7 @@ impl Threads {
         &mut self[fork_id]
     }
 
-    pub fn kill(&mut self, id: usize) {
+    pub fn kill(&mut self, id: u16) {
         let prev = self[id].prev;
         let next = self[id].next;
 
@@ -148,16 +151,16 @@ impl Threads {
     }
 }
 
-impl Index<usize> for Threads {
+impl Index<u16> for Threads {
     type Output = Thread;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        unsafe { self.pool.get_unchecked(index) }
+    fn index(&self, index: u16) -> &Self::Output {
+        unsafe { self.pool.get_unchecked(index as usize) }
     }
 }
 
-impl IndexMut<usize> for Threads {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        unsafe { self.pool.get_unchecked_mut(index) }
+impl IndexMut<u16> for Threads {
+    fn index_mut(&mut self, index: u16) -> &mut Self::Output {
+        unsafe { self.pool.get_unchecked_mut(index as usize) }
     }
 }

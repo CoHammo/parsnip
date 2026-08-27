@@ -26,12 +26,12 @@ impl Loop {
 #[derive(Debug, Clone)]
 struct StateNode {
     state: State,
-    prev: usize,
-    refs: usize,
+    prev: u16,
+    refs: u16,
 }
 
 impl StateNode {
-    pub fn new(state: State, prev: usize) -> Self {
+    pub fn new(state: State, prev: u16) -> Self {
         Self {
             state,
             prev,
@@ -51,7 +51,7 @@ impl StateNode {
 #[derive(Debug)]
 pub struct StateStack {
     stack: Vec<StateNode>,
-    free: usize,
+    free: u16,
 }
 
 impl StateStack {
@@ -62,38 +62,42 @@ impl StateStack {
         }
     }
 
-    fn at(&mut self, id: usize) -> &mut StateNode {
-        unsafe { self.stack.get_unchecked_mut(id) }
+    fn at(&mut self, id: u16) -> &mut StateNode {
+        unsafe { self.stack.get_unchecked_mut(id as usize) }
     }
 
-    pub fn check(&self, id: usize) -> Option<&State> {
+    pub fn check(&self, id: u16) -> Option<&State> {
         if id != 0 {
-            Some(unsafe { &self.stack.get_unchecked(id).state })
+            Some(unsafe { &self.stack.get_unchecked(id as usize).state })
         } else {
             None
         }
     }
 
-    pub fn push_state(&mut self, state: State, prev: usize) -> usize {
-        let mut id = self.free;
+    pub fn push_state(&mut self, state: State, prev: u16) -> u16 {
         if self.free == 0 {
-            id = self.stack.len();
+            let id = self.stack.len() as u16;
+            if id == u16::MAX {
+                panic!("State Stack Overflow!!");
+            }
             self.stack.push(StateNode::new(state, prev));
+            id
         } else {
+            let id = self.free;
             self.free = self.at(id).prev;
             let node = self.at(id);
             node.state = state;
             node.prev = prev;
             node.refs = 1;
+            id
         }
-        id
     }
 
-    pub fn before(&self, id: usize) -> usize {
-        unsafe { self.stack.get_unchecked(id).prev }
+    pub fn before(&self, id: u16) -> u16 {
+        unsafe { self.stack.get_unchecked(id as usize).prev }
     }
 
-    pub fn pop(&mut self, id: usize) -> (usize, State) {
+    pub fn pop(&mut self, id: u16) -> (u16, State) {
         if id != 0 {
             let node = self.at(id);
             let prev = node.prev;
@@ -111,11 +115,11 @@ impl StateStack {
         }
     }
 
-    pub fn upref(&mut self, id: usize) {
+    pub fn upref(&mut self, id: u16) {
         self.at(id).refs += 1;
     }
 
-    pub fn unref(&mut self, mut id: usize) {
+    pub fn unref(&mut self, mut id: u16) {
         while id != 0 {
             let free = self.free;
             let node = self.at(id);
@@ -131,7 +135,7 @@ impl StateStack {
         }
     }
 
-    pub fn edit(&mut self, id: usize) -> (usize, &mut State) {
+    pub fn edit(&mut self, id: u16) -> (u16, &mut State) {
         let node = self.at(id);
         if node.refs > 1 {
             node.refs -= 1;

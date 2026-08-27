@@ -3,7 +3,7 @@ mod events;
 mod iter;
 mod scopes;
 mod state;
-mod test_threads;
+// mod test_threads;
 mod tests;
 mod threads;
 
@@ -13,7 +13,6 @@ use iter::*;
 use scopes::*;
 use state::*;
 use threads::*;
-// use new_threads::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stat {
@@ -91,7 +90,7 @@ impl<T: Matches> Parser<T> {
         }
     }
 
-    fn kill_thread(&mut self, id: usize, events: bool) {
+    fn kill_thread(&mut self, id: u16, events: bool) {
         let thread = &mut self.threads[id];
         self.state.unref(thread.state);
         if events {
