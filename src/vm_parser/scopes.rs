@@ -1,63 +1,34 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Scopes {
     scopes: u64,
-    refs: [u8; 64],
+    index: u8,
 }
 
 impl Scopes {
     pub fn new() -> Self {
         Self {
             scopes: 0,
-            refs: [0; 64],
+            index: 0,
         }
     }
 
     pub fn next_scope(&mut self) -> u8 {
-        let mut id: u8 = 0;
-        for i in 0..64 {
-            if self.refs[i] == 0 {
-                self.refs[i] = 1;
-                id = i as u8;
-                break;
-            } else if i == 63 {
-                panic!("Parsing Scopes Overflowed!");
-            }
+        let id = self.index;
+        if self.index == 63 {
+            self.index = 0;
+        } else {
+            self.index += 1;
         }
         self.scopes |= 1u64 << id;
         id
     }
 
-    pub fn kill_scope(&mut self, id: u8, unref: bool) {
+    pub fn kill_scope(&mut self, id: u8) {
         self.scopes &= !(1u64 << id);
-        if unref {
-            self.refs[id as usize] -= 1;
-        }
     }
 
     pub fn is_dead(&self, scope: u64) -> bool {
-        if scope == 0 {
-            false
-        } else {
-            (scope & self.scopes) != scope
-        }
-    }
-
-    pub fn upref_scopes(&mut self, mut scopes: u64) {
-        while scopes != 0 {
-            let id = scopes.trailing_zeros();
-            // println!("uprefing scope {}", id);
-            self.refs[id as usize] += 1;
-            scopes &= !(1u64 << id);
-        }
-    }
-
-    pub fn unref_scopes(&mut self, mut scopes: u64) {
-        while scopes != 0 {
-            let id = scopes.trailing_zeros();
-            // println!("unrefing scope {}", id);
-            self.refs[id as usize] -= 1;
-            scopes &= !(1u64 << id);
-        }
+        (scope & self.scopes) != scope
     }
 }
 
@@ -81,28 +52,23 @@ impl Scope {
         self.last = id;
     }
 
-    pub fn last(&self) -> Option<u8> {
+    pub fn last_scope(&self) -> Option<u8> {
         if self.val != 0 { Some(self.last) } else { None }
     }
 
-    pub fn pop(&mut self) -> Option<u8> {
+    pub fn pop_scope(&mut self) -> Option<u8> {
         if self.val != 0 {
-            let mut mask = 1u64 << self.last;
-            self.val &= !mask;
-
+            let bit = 1u64 << self.last;
+            self.val &= !bit;
             if self.val != 0 {
                 let last = self.last;
-                let mut id = 63u8;
-                mask = 1u64 << id;
-                loop {
-                    if (self.val & mask) != 0 {
-                        self.last = id;
-                        break;
-                    } else {
-                        id -= 1;
-                        mask >>= 1;
-                    }
+                let mask = u64::MAX << last;
+                let mut temp = (!mask & self.val).leading_zeros() as u8;
+                if temp == 64 {
+                    temp = (mask & self.val).leading_zeros() as u8;
                 }
+                let id = 63u8 - temp;
+                self.last = id;
                 Some(last)
             } else {
                 Some(self.last)

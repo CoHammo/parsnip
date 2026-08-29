@@ -2,13 +2,13 @@
 pub struct Event {
     pub start: bool,
     pub index: usize,
-    prev: usize,
-    next: usize,
+    prev: u32,
+    next: u32,
     refs: u16,
 }
 
 impl Event {
-    pub fn new(start: bool, index: usize, prev: usize) -> Self {
+    pub fn new(start: bool, index: usize, prev: u32) -> Self {
         Self {
             start,
             index,
@@ -32,7 +32,7 @@ impl Event {
 #[derive(Debug)]
 pub struct EventsBuilder {
     stack: Vec<Event>,
-    free: usize,
+    free: u32,
 }
 
 impl EventsBuilder {
@@ -43,14 +43,14 @@ impl EventsBuilder {
         }
     }
 
-    fn at(&mut self, index: usize) -> &mut Event {
-        unsafe { self.stack.get_unchecked_mut(index) }
+    fn at(&mut self, index: u32) -> &mut Event {
+        unsafe { self.stack.get_unchecked_mut(index as usize) }
     }
 
-    pub fn push_event(&mut self, start: bool, index: usize, prev: usize) -> usize {
+    pub fn push_event(&mut self, start: bool, index: usize, prev: u32) -> u32 {
         let mut id = self.free;
         if self.free == 0 {
-            id = self.stack.len();
+            id = self.stack.len() as u32;
             self.stack.push(Event::new(start, index, prev));
         } else {
             self.free = self.at(id).next;
@@ -64,7 +64,7 @@ impl EventsBuilder {
         id
     }
 
-    pub fn upref(&mut self, id: usize) {
+    pub fn upref(&mut self, id: u32) {
         let event = self.at(id);
         event.refs += 1;
         if event.refs == u16::MAX {
@@ -72,7 +72,7 @@ impl EventsBuilder {
         }
     }
 
-    pub fn unref(&mut self, mut id: usize) {
+    pub fn unref(&mut self, mut id: u32) {
         while id != 0 {
             let free = self.free;
             let event = self.at(id);
@@ -90,7 +90,7 @@ impl EventsBuilder {
         }
     }
 
-    pub fn build_from(&mut self, mut id: usize) -> Events {
+    pub fn build_from(&mut self, mut id: u32) -> Events {
         let mut last = 0;
         let mut len = 0;
         while id != 0 {
@@ -108,12 +108,12 @@ impl EventsBuilder {
 #[derive(Debug)]
 pub struct Events {
     stack: Vec<Event>,
-    index: usize,
-    valid_len: usize,
+    index: u32,
+    valid_len: u32,
 }
 
 impl Events {
-    pub fn new(stack: Vec<Event>, first: usize, valid_len: usize) -> Self {
+    pub fn new(stack: Vec<Event>, first: u32, valid_len: u32) -> Self {
         Self {
             stack,
             index: first,
@@ -129,16 +129,16 @@ impl Events {
         }
     }
 
-    pub fn valid_len(&self) -> usize {
+    pub fn valid_len(&self) -> u32 {
         self.valid_len
     }
 
-    pub fn total_len(&self) -> usize {
-        self.stack.len()
+    pub fn total_len(&self) -> u32 {
+        self.stack.len() as u32
     }
 
-    fn at(&self, index: usize) -> &Event {
-        unsafe { self.stack.get_unchecked(index) }
+    fn at(&self, index: u32) -> &Event {
+        unsafe { self.stack.get_unchecked(index as usize) }
     }
 
     pub fn next(&mut self) -> Option<&Event> {

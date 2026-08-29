@@ -1,13 +1,14 @@
-use super::scopes::Scope;
+use super::Scope;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
 pub struct Thread {
-    pub ip: usize,
-    pub state: u16,
+    pub free: bool,
+    pub ip: u16,
     pub scope: Scope,
+    pub stack: u16,
     pub saves: u16,
-    pub event: usize,
+    pub event: u32,
     prev: u16,
     next: u16,
 }
@@ -15,9 +16,10 @@ pub struct Thread {
 impl Thread {
     pub fn new() -> Self {
         Self {
+            free: false,
             ip: 0,
-            state: 0,
             scope: Scope::new(),
+            stack: 0,
             saves: 0,
             event: 0,
             prev: 0,
@@ -71,7 +73,7 @@ impl Threads {
         self.pool.len() as u16
     }
 
-    pub fn next_thread(&mut self) -> Option<(u16, usize)> {
+    pub fn next_thread(&mut self) -> Option<(u16, u16)> {
         if self.index != 0 {
             let id = self.index;
             self.index = self[id].next;
@@ -97,6 +99,7 @@ impl Threads {
         } else {
             let id = self.free;
             self.free = self[id].next;
+            self[id].free = false;
             id
         }
     }
@@ -108,8 +111,8 @@ impl Threads {
                 .get_disjoint_unchecked_mut([id as usize, fork_id as usize])
         };
         fork.ip = orig.ip;
-        fork.state = orig.state;
         fork.scope = orig.scope;
+        fork.stack = orig.stack;
         fork.saves = orig.saves;
         fork.event = orig.event;
 
@@ -147,6 +150,7 @@ impl Threads {
 
         self[id].prev = 0;
         self[id].next = self.free;
+        self[id].free = true;
         self.free = id;
     }
 }
