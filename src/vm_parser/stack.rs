@@ -64,11 +64,11 @@ impl Stack {
         }
     }
 
-    fn at(&mut self, id: u16) -> &mut VarNode {
+    fn at_mut(&mut self, id: u16) -> &mut VarNode {
         unsafe { self.stack.get_unchecked_mut(id as usize) }
     }
 
-    fn at_imm(&self, id: u16) -> &VarNode {
+    fn at(&self, id: u16) -> &VarNode {
         unsafe { self.stack.get_unchecked(id as usize) }
     }
 
@@ -91,7 +91,7 @@ impl Stack {
         } else {
             let id = self.free;
             self.free = self.at(id).prev;
-            let node = self.at(id);
+            let node = self.at_mut(id);
             node.var = var;
             node.prev = prev;
             node.refs = 1;
@@ -105,15 +105,15 @@ impl Stack {
 
     pub fn pop_stack(&mut self, id: u16) -> Option<(u16, Var)> {
         if id != 0 {
-            let node = self.at(id);
+            let node = self.at_mut(id);
             let prev = node.prev;
             let var = node.var.clone();
             node.refs -= 1;
             if node.refs == 0 {
-                self.at(id).prev = self.free;
+                self.at_mut(id).prev = self.free;
                 self.free = id;
             } else {
-                self.at(prev).refs += 1;
+                self.at_mut(prev).refs += 1;
             }
             Some((prev, var))
         } else {
@@ -122,13 +122,13 @@ impl Stack {
     }
 
     pub fn upref(&mut self, id: u16) {
-        self.at(id).refs += 1;
+        self.at_mut(id).refs += 1;
     }
 
     pub fn unref(&mut self, mut id: u16) {
         while id != 0 {
             let free = self.free;
-            let node = self.at(id);
+            let node = self.at_mut(id);
             node.refs -= 1;
             if node.refs == 0 {
                 let next = node.prev;
@@ -143,16 +143,16 @@ impl Stack {
 
     pub fn edit(&mut self, id: u16) -> Option<(u16, &mut Var)> {
         if id != 0 {
-            let node = self.at(id);
+            let node = self.at_mut(id);
             if node.refs > 1 {
                 node.refs -= 1;
                 let prev = node.prev;
                 let state = node.var.clone();
-                self.at(prev).refs += 1;
+                self.at_mut(prev).refs += 1;
                 let branch_id = self.push_stack(state, prev);
-                Some((branch_id, &mut self.at(branch_id).var))
+                Some((branch_id, &mut self.at_mut(branch_id).var))
             } else {
-                Some((id, &mut self.at(id).var))
+                Some((id, &mut self.at_mut(id).var))
             }
         } else {
             None
@@ -161,7 +161,7 @@ impl Stack {
 
     pub fn contains(&self, mut id: u16, var: Var) -> bool {
         while id != 0 {
-            let node = self.at_imm(id);
+            let node = self.at(id);
             if node.var == var {
                 return true;
             } else {

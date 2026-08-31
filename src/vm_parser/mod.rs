@@ -30,7 +30,6 @@ pub struct Parser {
     scopes: Scopes,
     threads: Threads,
     stack: Stack,
-    // seen: HashSet<usize>,
     events: EventsBuilder,
     best_match: Option<u32>,
 }
@@ -44,7 +43,6 @@ impl Parser {
             scopes: Scopes::new(),
             threads: Threads::new(),
             stack: Stack::new(),
-            // seen: HashSet::new(),
             events: EventsBuilder::new(),
             best_match: None,
         }
@@ -199,17 +197,6 @@ impl Parser {
                             self.stat = Stat::Failed;
                             break;
                         }
-                        // if let (prev, state) = self.stack.pop_stack(thread.state)
-                        //     && let State::Save { .. } = state
-                        // {
-                        //     thread.state = prev;
-                        //     thread.saves -= 1;
-                        //     ip += 1;
-                        // } else {
-                        //     println!("Tried to unsave without a save");
-                        //     self.stat = Stat::Failed;
-                        //     break;
-                        // }
                     }
                     START_TOK => {
                         let thread = &mut self.threads[id];
@@ -247,33 +234,6 @@ impl Parser {
                                     self.events.upref(fork.event);
                                 }
                             }
-
-                        // if let Some(Var::Loop(_)) = self.stack.last(thread.stack) {
-                        //     let mut start: u16 = 0;
-                        //     let mut count: u32 = 0;
-                        //     let (state_id, st) = self.stack.edit(thread.stack);
-                        //     thread.state = state_id;
-                        //     if let State::Loop(loo) = st {
-                        //         start = loo.start;
-                        //         loo.count += 1;
-                        //         count = loo.count;
-                        //     }
-                        //     let (min, max) = self.ops.get_loop_bounds(ip);
-                        //     if count == max {
-                        //         let (prev_state_id, _) = self.state.pop(thread.state);
-                        //         thread.state = prev_state_id;
-                        //         ip += 9;
-                        //     } else {
-                        //         if count >= min {
-                        //             let fork = self.threads.fork_thread(id);
-                        //             fork.ip = ip + 9;
-                        //             fork.state = self.state.before(fork.state);
-                        //             self.state.upref(fork.state);
-                        //             self.events.upref(fork.event);
-                        //             self.scopes.upref_scopes(fork.scope.val());
-                        //         }
-                        //         ip = start;
-                        //     }
                         } else {
                             println!("Tried to close a loop with no start");
                             self.stat = Stat::Failed;

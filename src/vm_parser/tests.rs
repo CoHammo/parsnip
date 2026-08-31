@@ -7,23 +7,23 @@ fn test_vm() {
     // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
     // let mut parser = Parser::new(rep(tok(till2("\n")), 1, 0));
     let mut parser = Parser::new(rep(
-        alt(vec![
+        tok(alt(vec![
             branch(
-                tok(run(vec![
+                run(vec![
                     tok(run(vec![rep("#", 1, 6), str(" ")])),
                     commit(),
                     tok(till2("\n")),
-                ])),
+                ]),
                 true,
             ),
-            branch(tok(run(vec![tok("> "), commit(), tok(till2("\n"))])), true),
-            branch(tok(till2("\n")), false),
-        ]),
+            branch(run(vec![tok("> "), commit(), tok(till2("\n"))]), true),
+            branch(till2("\n"), false),
+        ])),
         1,
         0,
     ));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(850000);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(800000);
     // let source = "# A Title\n".repeat(2);
 
     // parser.debug();
@@ -48,19 +48,23 @@ fn test_vm() {
     // println!("Tokens: {:?}", buf);
     println!("{:?}", parser.stat);
     // println!("Threads: {:#?}", parser.threads);
+    println!("Total Threads: {}", parser.threads.len());
     println!(
         "Valid/Total Events: {}/{}",
         res.valid_len(),
         res.total_len()
     );
-    println!("Total Threads: {}", parser.threads.len());
     println!("Best Match: {:?}", parser.best_match);
     println!("{:?}", duration);
 }
 
 #[test]
-fn test_compile() {
-    let ir = till2("\n");
+fn test_compiler() {
+    let ir = alt(vec![
+        branch("Hello", false),
+        branch("World", false),
+        branch("Man", false),
+    ]);
     println!("{:?}", ir);
     let parser = Parser::new(ir);
     println!("{:?}", parser.ops);

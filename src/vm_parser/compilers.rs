@@ -101,9 +101,7 @@ pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
 
     let mut total_len: usize = 0;
     for (i, branch) in branches.iter_mut().enumerate() {
-        if i != num_branches - 1 {
-            total_len += branch.len;
-        } else {
+        if i == num_branches - 1 {
             match branch.commits {
                 true => {
                     total_len += branch.len;
@@ -111,23 +109,25 @@ pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
                 }
                 false => total_len += branch.len - 1,
             }
+        } else {
+            total_len += branch.len;
         }
     }
 
     let mut len: usize = 0;
     for (i, branch) in branches.iter_mut().enumerate() {
         if i != num_branches - 1 {
-            let branches_left = num_branches - 2 - i;
+            let branch_ops_left = num_branches - 2 - i;
             len += branch.len;
             ops.push(Op::Branch(
                 Jmp::Up(1),
-                Jmp::Up((len + branches_left + 1) as u16),
+                Jmp::Up((len + branch_ops_left + 1) as u16),
             ));
 
-            let add = if branch.commits { 2 } else { 1 };
+            let add_jump = if branch.commits { 2 } else { 1 };
             branch
                 .ops
-                .push(Op::Jump(Jmp::Up((total_len - len + add) as u16)));
+                .push(Op::Jump(Jmp::Up((total_len - len + add_jump) as u16)));
         }
     }
 
