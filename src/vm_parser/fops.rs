@@ -1,7 +1,7 @@
-use std::ops::Index;
-
 use super::{Jmp, Op, Parser, Parses, Snip, Stat, Var};
+use std::{mem, ops::Index};
 
+#[derive(Debug)]
 pub struct Args {
     args: Vec<u8>,
 }
@@ -11,44 +11,38 @@ impl Args {
         Self { args }
     }
 
-    pub fn get_match_slice(&self, index: u16) -> &[u8] {
+    pub fn get_match_slice(&self, index: u16, len: u8) -> &[u8] {
         unsafe {
-            let len = self[index] as u16;
             &self
                 .args
-                .get_unchecked((index + 1) as usize..((index + 1 + len) as usize))
+                .get_unchecked((index) as usize..((index + len as u16) as usize))
         }
     }
 
     pub fn get_jump_target(&self, index: u16) -> u16 {
-        let upper = self[index];
-        let lower = self[index + 1];
-        (upper as u16) << 8 | lower as u16
+        let target = u16::from_be_bytes([self[index], self[index + 1]]);
+        target
     }
 
     pub fn get_branch_targets(&self, index: u16) -> (u16, u16) {
-        let upper1 = self[index];
-        let lower1 = self[index + 1];
-        let upper2 = self[index + 2];
-        let lower2 = self[index + 3];
-        (
-            (upper1 as u16) << 8 | lower1 as u16,
-            (upper2 as u16) << 8 | lower2 as u16,
-        )
+        let t1 = u16::from_be_bytes([self[index], self[index + 1]]);
+        let t2 = u16::from_be_bytes([self[index + 2], self[index + 3]]);
+        (t1, t2)
     }
 
     pub fn get_loop_bounds(&self, index: u16) -> (u32, u32) {
-        let up1 = self[index];
-        let upmid1 = self[index + 1];
-        let lowmid1 = self[index + 2];
-        let low1 = self[index + 3];
-        let min = (up1 as u32) << 24 | (upmid1 as u32) << 16 | (lowmid1 as u32) << 8 | low1 as u32;
-
-        let up2 = self[index + 4];
-        let upmid2 = self[index + 5];
-        let lowmid2 = self[index + 6];
-        let low2 = self[index + 8];
-        let max = (up2 as u32) << 24 | (upmid2 as u32) << 16 | (lowmid2 as u32) << 8 | low2 as u32;
+        let min = u32::from_be_bytes([
+            self[index],
+            self[index + 1],
+            self[index + 2],
+            self[index + 3],
+        ]);
+        let max = u32::from_be_bytes([
+            self[index + 4],
+            self[index + 5],
+            self[index + 6],
+            self[index + 7],
+        ]);
         (min, max)
     }
 }
@@ -60,7 +54,7 @@ impl Index<u16> for Args {
     }
 }
 
-pub fn matched<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn matched<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     if let Some(best) = vm.best_match
         && best != 0
@@ -73,14 +67,14 @@ pub fn matched<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u
 }
 
 pub fn try_match<T: Parses>(
-    vm: &mut Parser,
+    vm: &mut Parser<T>,
     snip: &Snip<T>,
     tid: u16,
     args: &Args,
     args_id: u16,
 ) -> bool {
     if let Some(value) = &snip.value {
-        let slice = args.get_match_slice(args_id);
+        let slice = args.get_match_slice(args_id, mem::size_of::<T>() as u8);
         if value.matches(slice) {
             vm.threads[tid].ip += 1;
             // } else if thread.saves > 0 {
@@ -102,19 +96,25 @@ pub fn try_match<T: Parses>(
     false
 }
 
-pub fn match_any<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn match_any<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     vm.threads[tid].ip += 1;
     false
 }
 
-pub fn jump<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool {
+pub fn jump<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    args: &Args,
+    args_id: u16,
+) -> bool {
     let target = args.get_jump_target(args_id);
     vm.threads[tid].ip = target;
     true
 }
 
 pub fn branch_off<T: Parses>(
-    vm: &mut Parser,
+    vm: &mut Parser<T>,
     _: &Snip<T>,
     tid: u16,
     args: &Args,
@@ -129,14 +129,20 @@ pub fn branch_off<T: Parses>(
     true
 }
 
-pub fn scope<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn scope<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     thread.scope.add_scope(vm.scopes.next_scope());
     thread.ip += 1;
     true
 }
 
-pub fn commit_scope<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn commit_scope<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    _: &Args,
+    _: u16,
+) -> bool {
     let thread = &mut vm.threads[tid];
     if let Some(scope_id) = thread.scope.pop_scope() {
         vm.scopes.kill_scope(scope_id);
@@ -149,7 +155,7 @@ pub fn commit_scope<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args,
     true
 }
 
-pub fn kill_scope<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn kill_scope<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     if let Some(scope_id) = thread.scope.last_scope() {
         vm.scopes.kill_scope(scope_id);
@@ -161,7 +167,7 @@ pub fn kill_scope<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _
     true
 }
 
-pub fn save<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn save<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     thread.ip += 1;
     thread.stack = vm.stack.push_stack(
@@ -172,7 +178,7 @@ pub fn save<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16)
     true
 }
 
-pub fn unsave<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn unsave<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     if let Some((prev, Var::Save { .. })) = vm.stack.pop_stack(thread.stack) {
         thread.stack = prev;
@@ -186,33 +192,46 @@ pub fn unsave<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u1
     true
 }
 
-pub fn start_tok<T: Parses>(vm: &mut Parser, snip: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn start_tok<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    _: &Args,
+    _: u16,
+) -> bool {
     let thread = &mut vm.threads[tid];
     thread.event = vm.events.push_event(true, snip.index, thread.event);
     thread.ip += 1;
     true
 }
 
-pub fn end_tok<T: Parses>(vm: &mut Parser, snip: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn end_tok<T: Parses>(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     thread.event = vm.events.push_event(false, snip.index, thread.event);
     thread.ip += 1;
     true
 }
 
-pub fn start_loop<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn start_loop<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
     let thread = &mut vm.threads[tid];
     thread.ip += 1;
     thread.stack = vm.stack.push_stack(Var::loo(thread.ip), thread.stack);
     true
 }
 
-pub fn end_loop<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn end_loop<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    args: &Args,
+    args_id: u16,
+) -> bool {
     let thread = &mut vm.threads[tid];
     if let Some((new_stack_id, Var::Loop(loo))) = vm.stack.edit(thread.stack) {
         thread.stack = new_stack_id;
         loo.count += 1;
-        let (min, max) = vm.ops.get_loop_bounds(thread.ip);
+        let (min, max) = args.get_loop_bounds(args_id);
+        // println!("Loop Bounds at {}: {}, {}", args_id, min, max);
         if loo.count == max {
             thread.stack = vm.stack.pop_stack(thread.stack).unwrap().0;
             thread.ip += 1;
@@ -235,23 +254,27 @@ pub fn end_loop<T: Parses>(vm: &mut Parser, _: &Snip<T>, tid: u16, _: &Args, _: 
     true
 }
 
+#[derive(Debug)]
 pub struct FOp<T: Parses> {
-    pub fun: fn(vm: &mut Parser, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
+    pub fun: fn(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
     pub args_id: u16,
+    // pub name: String,
 }
 
 impl<T: Parses> FOp<T> {
     pub fn new(
-        fun: fn(vm: &mut Parser, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
+        fun: fn(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
         args_id: u16,
+        // name: String,
     ) -> Self {
         Self { fun, args_id }
     }
 }
 
+#[derive(Debug)]
 pub struct FOps<T: Parses> {
-    args: Args,
-    fops: Vec<FOp<T>>,
+    pub args: Args,
+    pub fops: Vec<FOp<T>>,
 }
 
 impl<T: Parses> FOps<T> {
@@ -267,26 +290,39 @@ impl<T: Parses> FOps<T> {
             let args_index = args.len() as u16;
             match op {
                 Op::Matched => {
-                    fops.push(FOp::new(matched::<T>, args_index));
+                    fops.push(FOp::new(
+                        matched::<T>,
+                        args_index,
+                        // "Matched".to_string()
+                    ));
                 }
                 Op::Match(value) => {
                     let bytes = value.to_bytes();
-                    args.push(bytes.len() as u8);
+                    // args.push(bytes.len() as u8);
                     args.extend(bytes);
-                    fops.push(FOp::new(try_match::<T>, args_index));
+                    fops.push(FOp::new(
+                        try_match::<T>,
+                        args_index,
+                        // format!("Match({:?})", bytes),
+                    ));
                 }
                 Op::MatchAny => {
-                    fops.push(FOp::new(match_any::<T>, args_index));
+                    fops.push(FOp::new(
+                        match_any::<T>,
+                        args_index,
+                        // "MatchAny".to_string()
+                    ));
                 }
                 Op::Jump(j) => {
                     let target = match j {
                         Jmp::Up(add) => index + add,
                         Jmp::Back(sub) => index - sub,
                     };
-                    let upper = (target >> 8) as u8;
-                    let lower = target as u8;
-                    args.extend([upper, lower]);
-                    fops.push(FOp::new(jump::<T>, args_index));
+                    args.extend(target.to_be_bytes());
+                    fops.push(FOp::new(
+                        jump::<T>, args_index,
+                        // format!("Jump({})", target)
+                    ));
                 }
                 Op::Branch(j1, j2) => {
                     let t1 = match j1 {
@@ -297,55 +333,105 @@ impl<T: Parses> FOps<T> {
                         Jmp::Up(add) => index + add,
                         Jmp::Back(sub) => index - sub,
                     };
-                    let upper1 = (t1 >> 8) as u8;
-                    let lower1 = t1 as u8;
-                    let upper2 = (t2 >> 8) as u8;
-                    let lower2 = t2 as u8;
-                    args.extend([upper1, lower1, upper2, lower2]);
-                    fops.push(FOp::new(branch_off::<T>, args_index));
+                    args.extend(t1.to_be_bytes());
+                    args.extend(t2.to_be_bytes());
+                    fops.push(FOp::new(
+                        branch_off::<T>,
+                        args_index,
+                        // format!("Branch({}, {})", t1, t2),
+                    ));
                 }
                 Op::Scope => {
-                    fops.push(FOp::new(scope::<T>, args_index));
+                    fops.push(FOp::new(
+                        scope::<T>, args_index,
+                        // "Scope".to_string()
+                    ));
                 }
                 Op::CommitScope => {
-                    fops.push(FOp::new(commit_scope::<T>, args_index));
+                    fops.push(FOp::new(
+                        commit_scope::<T>,
+                        args_index,
+                        // "CommitScope".to_string(),
+                    ));
                 }
                 Op::KillScope => {
-                    fops.push(FOp::new(kill_scope::<T>, args_index));
+                    fops.push(FOp::new(
+                        kill_scope::<T>,
+                        args_index,
+                        // "KillScope".to_string(),
+                    ));
                 }
                 Op::Save => {
-                    fops.push(FOp::new(save::<T>, args_index));
+                    fops.push(FOp::new(
+                        save::<T>, args_index,
+                        // "Save".to_string()
+                    ));
                 }
                 Op::Unsave => {
-                    fops.push(FOp::new(unsave::<T>, args_index));
+                    fops.push(FOp::new(
+                        unsave::<T>,
+                        args_index,
+                        // "Unsave".to_string()
+                    ));
                 }
                 Op::StartTok => {
-                    fops.push(FOp::new(start_tok::<T>, args_index));
+                    fops.push(FOp::new(
+                        start_tok::<T>,
+                        args_index,
+                        // "StartTok".to_string()
+                    ));
                 }
                 Op::EndTok => {
-                    fops.push(FOp::new(end_tok::<T>, args_index));
+                    fops.push(FOp::new(
+                        end_tok::<T>,
+                        args_index,
+                        // "EndTok".to_string()
+                    ));
                 }
                 Op::StartLoop => {
-                    fops.push(FOp::new(start_loop::<T>, args_index));
+                    fops.push(FOp::new(
+                        start_loop::<T>,
+                        args_index,
+                        // "StartLoop".to_string(),
+                    ));
                 }
                 Op::EndLoop(min, max) => {
                     args.extend(min.to_be_bytes());
                     args.extend(max.to_be_bytes());
-                    fops.push(FOp::new(end_loop::<T>, args_index));
+                    fops.push(FOp::new(
+                        end_loop::<T>,
+                        args_index,
+                        // format!("EndLoop({}, {})", min, max),
+                    ));
                 }
             }
         }
         // args.push(0);
         Self {
-            args: Args { args },
+            args: Args::new(args),
             fops,
         }
     }
 
-    pub fn run(&self, vm: &mut Parser, snip: &Snip<T>, tid: u16) {
-        let mut fop = &self.fops[vm.threads[tid].ip as usize];
-        while (fop.fun)(vm, snip, tid, &self.args, fop.args_id) {
-            fop = &self.fops[vm.threads[tid].ip as usize];
-        }
+    pub fn call(&self, vm_ptr: *mut Parser<T>, snip: &Snip<T>, tid: u16) -> bool {
+        let vm = unsafe { &mut *vm_ptr };
+        let fop = &self.fops[vm.threads[tid].ip as usize];
+        // println!(
+        //     "Thread {}: snipdex={}, snip={:?}, fop={:?}",
+        //     tid, snip.index, snip.value, fop.fun
+        // );
+        (fop.fun)(vm, snip, tid, &self.args, fop.args_id)
     }
+
+    // pub fn run(&self, vm_ptr: *mut Parser<T>, snip: &Snip<T>, tid: u16) {
+    //     let vm = unsafe { &mut *vm_ptr };
+    //     let mut fop = &self.fops[vm.threads[tid].ip as usize];
+    //     while (fop.fun)(vm, snip, tid, &self.args, fop.args_id) {
+    //         println!(
+    //             "Thread {}: snipdex={}, snip={:?}, fop={:?}",
+    //             tid, snip.index, snip.value, fop.name
+    //         );
+    //         fop = &self.fops[vm.threads[tid].ip as usize];
+    //     }
+    // }
 }
