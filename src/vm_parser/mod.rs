@@ -4,6 +4,7 @@ mod iter;
 mod scopes;
 mod stack;
 // mod test_threads;
+mod fops;
 mod ops;
 mod tests;
 mod threads;
@@ -55,14 +56,12 @@ impl Parser {
 
     fn kill_thread(&mut self, id: u16, unref_events: bool) {
         let thread = &mut self.threads[id];
-        if !thread.free {
-            self.stack.unref(thread.stack);
-            if unref_events {
-                self.events.unref(thread.event);
-            }
-            self.threads.kill(id);
-            // println!("Killed Thread {}", id);
+        self.stack.unref(thread.stack);
+        if unref_events {
+            self.events.unref(thread.event);
         }
+        self.threads.kill(id);
+        // println!("Killed Thread {}", id);
     }
 
     pub fn parse<T: Parses, I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {

@@ -30,13 +30,13 @@ impl Loop {
 }
 
 #[derive(Debug, Clone)]
-struct VarNode {
+struct StackNode {
     var: Var,
     prev: u16,
     refs: u16,
 }
 
-impl VarNode {
+impl StackNode {
     pub fn new(var: Var, prev: u16) -> Self {
         Self { var, prev, refs: 1 }
     }
@@ -52,23 +52,23 @@ impl VarNode {
 
 #[derive(Debug)]
 pub struct Stack {
-    stack: Vec<VarNode>,
+    stack: Vec<StackNode>,
     free: u16,
 }
 
 impl Stack {
     pub fn new() -> Self {
         Self {
-            stack: vec![VarNode::empty()],
+            stack: vec![StackNode::empty()],
             free: 0,
         }
     }
 
-    fn at_mut(&mut self, id: u16) -> &mut VarNode {
+    fn at_mut(&mut self, id: u16) -> &mut StackNode {
         unsafe { self.stack.get_unchecked_mut(id as usize) }
     }
 
-    fn at(&self, id: u16) -> &VarNode {
+    fn at(&self, id: u16) -> &StackNode {
         unsafe { self.stack.get_unchecked(id as usize) }
     }
 
@@ -86,7 +86,7 @@ impl Stack {
             if id == u16::MAX {
                 panic!("State Stack Overflow!!");
             }
-            self.stack.push(VarNode::new(var, prev));
+            self.stack.push(StackNode::new(var, prev));
             id
         } else {
             let id = self.free;

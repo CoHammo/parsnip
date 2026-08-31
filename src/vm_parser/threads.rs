@@ -3,7 +3,6 @@ use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
 pub struct Thread {
-    pub free: bool,
     pub ip: u16,
     pub scope: Scope,
     pub stack: u16,
@@ -16,7 +15,6 @@ pub struct Thread {
 impl Thread {
     pub fn new() -> Self {
         Self {
-            free: false,
             ip: 0,
             scope: Scope::new(),
             stack: 0,
@@ -99,7 +97,6 @@ impl Threads {
         } else {
             let id = self.free;
             self.free = self[id].next;
-            self[id].free = false;
             id
         }
     }
@@ -150,7 +147,6 @@ impl Threads {
 
         self[id].prev = 0;
         self[id].next = self.free;
-        self[id].free = true;
         self.free = id;
     }
 }

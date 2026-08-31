@@ -41,7 +41,7 @@ pub enum Op<T: Parses> {
 }
 
 impl<T: Parses> Op<T> {
-    fn byte(&self) -> u8 {
+    pub fn byte(&self) -> u8 {
         match self {
             Op::Matched => MATCHED,
             Op::Match(_) => MATCH,
@@ -67,23 +67,23 @@ pub struct Ops {
 }
 
 impl Ops {
-    pub fn new<T: Parses>(mut ir: Vec<Op<T>>) -> Self {
+    pub fn new<T: Parses>(ir: Vec<Op<T>>) -> Self {
         if ir.len() >= u16::MAX as usize {
             panic!("Too Many Ops");
         }
-        ir.push(Op::Matched);
         let mut ops: Vec<u8> = Vec::new();
         let mut indices: Vec<u16> = Vec::new();
         let mut jumps: Vec<(u16, u16)> = Vec::new();
         for (i, op) in ir.into_iter().enumerate() {
             let index = i as u16;
             let byte_index = ops.len() as u16;
-            indices.push(byte_index as u16);
+            indices.push(byte_index);
             ops.push(op.byte());
             match op {
                 Op::Match(val) => {
-                    ops.push(T::bytes_len());
-                    ops.extend(val.to_bytes());
+                    let bytes = val.to_bytes();
+                    ops.push(bytes.len() as u8);
+                    ops.extend(bytes);
                 }
                 Op::Jump(jump) => {
                     match jump {
@@ -117,6 +117,7 @@ impl Ops {
             ops[at as usize + 1] = up;
             ops[at as usize + 2] = low;
         }
+        ops.push(MATCHED);
 
         Self { ops }
     }
