@@ -1,5 +1,8 @@
-use super::Scope;
-use std::ops::{Index, IndexMut};
+use super::{Parses, Scope};
+use std::{
+    marker::PhantomData,
+    ops::{Index, IndexMut},
+};
 
 #[derive(Debug, Clone)]
 pub struct Thread {
@@ -41,7 +44,7 @@ impl Thread {
 
     pub fn dbg(&self) -> String {
         format!(
-            "Thread(ip={}, saves={}, event={:?})",
+            "Thread(ip={:?}, saves={}, event={:?})",
             self.ip, self.saves, self.event
         )
     }

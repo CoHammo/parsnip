@@ -43,7 +43,7 @@ pub fn not<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
     let mut ops = vec![Op::Scope];
     let inner = value.cops();
     let len = inner.len() + 2;
-    ops.push(Op::Branch(Jmp::Up(len as u16), Jmp::Up(1)));
+    ops.push(Op::Branch(Jmp::Up(len), Jmp::Up(1)));
     ops.extend(inner);
     ops.push(Op::KillScope);
     ops
@@ -58,9 +58,10 @@ pub fn rep<T: Parses>(value: impl Compiles<T>, mut min: u32, mut max: u32) -> Ve
         max = min;
     }
     let inner = value.cops();
+    let len = inner.len();
     let mut ops = vec![Op::StartLoop];
     ops.extend(inner);
-    ops.push(Op::EndLoop(min, max));
+    ops.push(Op::EndLoop(len, min, max));
     ops
 }
 
@@ -119,15 +120,12 @@ pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
         if i != num_branches - 1 {
             let branch_ops_left = num_branches - 2 - i;
             len += branch.len;
-            ops.push(Op::Branch(
-                Jmp::Up(1),
-                Jmp::Up((len + branch_ops_left + 1) as u16),
-            ));
+            ops.push(Op::Branch(Jmp::Up(1), Jmp::Up(len + branch_ops_left + 1)));
 
             let add_jump = if branch.commits { 2 } else { 1 };
             branch
                 .ops
-                .push(Op::Jump(Jmp::Up((total_len - len + add_jump) as u16)));
+                .push(Op::Jump(Jmp::Up(total_len - len + add_jump)));
         }
     }
 

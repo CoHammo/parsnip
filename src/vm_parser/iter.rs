@@ -5,7 +5,7 @@ use std::{
 };
 
 pub trait Parses: Default + std::fmt::Debug + Clone {
-    // fn bytes_len() -> u8;
+    fn bytes_len() -> u8;
     fn matches(&self, other: &[u8]) -> bool;
     fn to_bytes(self) -> Vec<u8>;
 }
@@ -91,9 +91,9 @@ impl<T: Parses, I: SnipIter<T>> Snips<T, I> {
 }
 
 impl Parses for u8 {
-    // fn bytes_len() -> u8 {
-    //     1
-    // }
+    fn bytes_len() -> u8 {
+        1
+    }
 
     fn matches(&self, other: &[u8]) -> bool {
         self == unsafe { other.get_unchecked(0) }

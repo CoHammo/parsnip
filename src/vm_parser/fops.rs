@@ -1,60 +1,84 @@
-use super::{Jmp, Op, Parser, Parses, Snip, Stat, Var};
-use std::{mem, ops::Index};
+use super::{Jmp, Op, Parser, Parses, Snip, Stat, Var, ops::*};
+use std::ops::Index;
+
+pub type OpFunc<T> =
+    fn(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: Args, next1: &Fop<T>, next2: &Fop<T>);
 
 #[derive(Debug)]
-pub struct Args {
-    args: Vec<u8>,
+pub struct Args<'a> {
+    data: &'a [u8],
+    id: u16,
 }
 
-impl Args {
-    pub fn new(args: Vec<u8>) -> Self {
-        Self { args }
+impl<'a> Args<'a> {
+    pub fn new(data: &'a [u8], id: u16) -> Self {
+        Self { data, id }
     }
 
-    pub fn get_match_slice(&self, index: u16, len: u8) -> &[u8] {
-        unsafe {
+    pub fn at(self, id: u16) -> Self {
+        Self { id, ..self }
+    }
+
+    pub fn get_match_args(&self, len: u16) -> &[u8] {
+        let slice = unsafe {
             &self
-                .args
-                .get_unchecked((index) as usize..((index + len as u16) as usize))
-        }
+                .data
+                .get_unchecked((self.id) as usize..((self.id + len) as usize))
+        };
+        slice
     }
 
-    pub fn get_jump_target(&self, index: u16) -> u16 {
-        let target = u16::from_be_bytes([self[index], self[index + 1]]);
-        target
-    }
+    // pub fn get_jump_args(&self) -> (u16, OpFunc<T>) {
+    //     let args_target = u16::from_be_bytes([self[self.id], self[self.id + 1]]);
+    //     let func = self[self[self.id + 2]];
+    //     (args_target, func)
+    // }
 
-    pub fn get_branch_targets(&self, index: u16) -> (u16, u16) {
-        let t1 = u16::from_be_bytes([self[index], self[index + 1]]);
-        let t2 = u16::from_be_bytes([self[index + 2], self[index + 3]]);
-        (t1, t2)
-    }
+    // pub fn get_branch_args(&self) -> ((u16, OpFunc<T>), (u16, OpFunc<T>)) {
+    //     let args_target1 = u16::from_be_bytes([self[self.id], self[self.id + 1]]);
+    //     let args_target2 = u16::from_be_bytes([self[self.id + 2], self[self.id + 3]]);
+    //     (
+    //         (args_target1, self[self[self.id + 4]]),
+    //         (args_target2, self[self[self.id + 5]]),
+    //     )
+    // }
 
-    pub fn get_loop_bounds(&self, index: u16) -> (u32, u32) {
+    pub fn get_loop_args(&self) -> (u32, u32) {
         let min = u32::from_be_bytes([
-            self[index],
-            self[index + 1],
-            self[index + 2],
-            self[index + 3],
+            self[self.id],
+            self[self.id + 1],
+            self[self.id + 2],
+            self[self.id + 3],
         ]);
         let max = u32::from_be_bytes([
-            self[index + 4],
-            self[index + 5],
-            self[index + 6],
-            self[index + 7],
+            self[self.id + 4],
+            self[self.id + 5],
+            self[self.id + 6],
+            self[self.id + 7],
         ]);
         (min, max)
     }
 }
 
-impl Index<u16> for Args {
+impl Index<u16> for Args<'_> {
     type Output = u8;
     fn index(&self, index: u16) -> &u8 {
-        unsafe { self.args.get_unchecked(index as usize) }
+        unsafe { self.data.get_unchecked(index as usize) }
     }
 }
 
-pub fn matched<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn nothing<T: Parses>(_: &mut Parser<T>, _: &Snip<T>, _: u16, _: Args, _: &Fop<T>, _: &Fop<T>) {
+    panic!("Nothing Fop Called!!");
+}
+
+pub fn matched<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    _: Args,
+    _: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
     if let Some(best) = vm.best_match
         && best != 0
@@ -63,20 +87,21 @@ pub fn matched<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _
     }
     vm.best_match = Some(thread.event);
     vm.kill_thread(tid, false);
-    false
 }
 
 pub fn try_match<T: Parses>(
     vm: &mut Parser<T>,
     snip: &Snip<T>,
     tid: u16,
-    args: &Args,
-    args_id: u16,
-) -> bool {
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     if let Some(value) = &snip.value {
-        let slice = args.get_match_slice(args_id, mem::size_of::<T>() as u8);
+        let slice = args.get_match_args(T::bytes_len() as u16);
         if value.matches(slice) {
-            vm.threads[tid].ip += 1;
+            let thread = &mut vm.threads[tid];
+            thread.ip = fop1;
             // } else if thread.saves > 0 {
             //     if self.debug {
             //         println!("    Rewinding...");
@@ -93,236 +118,308 @@ pub fn try_match<T: Parses>(
     } else {
         vm.kill_thread(tid, true);
     }
-    false
 }
 
-pub fn match_any<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
-    vm.threads[tid].ip += 1;
-    false
+pub fn match_any<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    _: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
+    let thread = &mut vm.threads[tid];
+    thread.ip = fop1;
 }
 
 pub fn jump<T: Parses>(
     vm: &mut Parser<T>,
-    _: &Snip<T>,
+    snip: &Snip<T>,
     tid: u16,
-    args: &Args,
-    args_id: u16,
-) -> bool {
-    let target = args.get_jump_target(args_id);
-    vm.threads[tid].ip = target;
-    true
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
+    fop1.call(vm, snip, tid, args);
 }
 
 pub fn branch_off<T: Parses>(
     vm: &mut Parser<T>,
-    _: &Snip<T>,
+    snip: &Snip<T>,
     tid: u16,
-    args: &Args,
-    args_id: u16,
-) -> bool {
-    let (t1, t2) = args.get_branch_targets(args_id);
-    vm.threads[tid].ip = t1;
+    args: Args,
+    fop1: &Fop<T>,
+    fop2: &Fop<T>,
+) {
     let fork = vm.threads.fork_thread(tid);
-    fork.ip = t2;
+    fork.ip = fop2;
     vm.stack.upref(fork.stack);
     vm.events.upref(fork.event);
-    true
+    fop1.call(vm, snip, tid, args);
 }
 
-pub fn scope<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
-    let thread = &mut vm.threads[tid];
-    thread.scope.add_scope(vm.scopes.next_scope());
-    thread.ip += 1;
-    true
+pub fn scope<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
+    vm.threads[tid].scope.add_scope(vm.scopes.next_scope());
+    fop1.call(vm, snip, tid, args);
 }
 
 pub fn commit_scope<T: Parses>(
     vm: &mut Parser<T>,
-    _: &Snip<T>,
+    snip: &Snip<T>,
     tid: u16,
-    _: &Args,
-    _: u16,
-) -> bool {
-    let thread = &mut vm.threads[tid];
-    if let Some(scope_id) = thread.scope.pop_scope() {
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
+    if let Some(scope_id) = vm.threads[tid].scope.pop_scope() {
         vm.scopes.kill_scope(scope_id);
-        thread.ip += 1;
+        fop1.call(vm, snip, tid, args);
     } else {
         println!("Tried to commit a scope that doesn't exist");
         vm.stat = Stat::Failed;
-        return false;
     }
-    true
 }
 
-pub fn kill_scope<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
-    let thread = &mut vm.threads[tid];
-    if let Some(scope_id) = thread.scope.last_scope() {
+pub fn kill_scope<T: Parses>(
+    vm: &mut Parser<T>,
+    _: &Snip<T>,
+    tid: u16,
+    _: Args,
+    _: &Fop<T>,
+    _: &Fop<T>,
+) {
+    if let Some(scope_id) = vm.threads[tid].scope.last_scope() {
         vm.scopes.kill_scope(scope_id);
     } else {
         println!("Tried to kill a scope that doesn't exist");
         vm.stat = Stat::Failed;
-        return false;
     }
-    true
 }
 
-pub fn save<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn save<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
-    thread.ip += 1;
+    thread.ip = fop1;
     thread.stack = vm.stack.push_stack(
         Var::save(thread.ip, thread.event, thread.scope),
         thread.stack,
     );
     thread.saves += 1;
-    true
+    fop1.call(vm, snip, tid, args);
 }
 
-pub fn unsave<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn unsave<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
     if let Some((prev, Var::Save { .. })) = vm.stack.pop_stack(thread.stack) {
         thread.stack = prev;
         thread.saves -= 1;
-        thread.ip += 1;
+        fop1.call(vm, snip, tid, args);
     } else {
         println!("Tried to unsave without a save");
         vm.stat = Stat::Failed;
-        return false;
     }
-    true
 }
 
 pub fn start_tok<T: Parses>(
     vm: &mut Parser<T>,
     snip: &Snip<T>,
     tid: u16,
-    _: &Args,
-    _: u16,
-) -> bool {
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
     thread.event = vm.events.push_event(true, snip.index, thread.event);
-    thread.ip += 1;
-    true
+    fop1.call(vm, snip, tid, args);
 }
 
-pub fn end_tok<T: Parses>(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn end_tok<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
     thread.event = vm.events.push_event(false, snip.index, thread.event);
-    thread.ip += 1;
-    true
+    fop1.call(vm, snip, tid, args);
 }
 
-pub fn start_loop<T: Parses>(vm: &mut Parser<T>, _: &Snip<T>, tid: u16, _: &Args, _: u16) -> bool {
+pub fn start_loop<T: Parses>(
+    vm: &mut Parser<T>,
+    snip: &Snip<T>,
+    tid: u16,
+    args: Args,
+    fop1: &Fop<T>,
+    _: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
-    thread.ip += 1;
-    thread.stack = vm.stack.push_stack(Var::loo(thread.ip), thread.stack);
-    true
+    thread.stack = vm.stack.push_stack(Var::loo(), thread.stack);
+    fop1.call(vm, snip, tid, args);
 }
 
 pub fn end_loop<T: Parses>(
     vm: &mut Parser<T>,
-    _: &Snip<T>,
+    snip: &Snip<T>,
     tid: u16,
-    args: &Args,
-    args_id: u16,
-) -> bool {
+    args: Args,
+    fop1: &Fop<T>,
+    fop2: &Fop<T>,
+) {
     let thread = &mut vm.threads[tid];
     if let Some((new_stack_id, Var::Loop(loo))) = vm.stack.edit(thread.stack) {
         thread.stack = new_stack_id;
         loo.count += 1;
-        let (min, max) = args.get_loop_bounds(args_id);
+        let (min, max) = args.get_loop_args();
         // println!("Loop Bounds at {}: {}, {}", args_id, min, max);
         if loo.count == max {
             thread.stack = vm.stack.pop_stack(thread.stack).unwrap().0;
-            thread.ip += 1;
+            fop2.call(vm, snip, tid, args);
         } else {
-            let fork_ip = thread.ip + 1;
-            thread.ip = loo.start;
             if loo.count >= min {
                 let fork = vm.threads.fork_thread(tid);
-                fork.ip = fork_ip;
+                fork.ip = fop2;
                 fork.stack = vm.stack.before(fork.stack);
                 vm.stack.upref(fork.stack);
                 vm.events.upref(fork.event);
             }
+            fop1.call(vm, snip, tid, args);
         }
     } else {
         println!("Tried to close a loop with no start");
         vm.stat = Stat::Failed;
-        return false;
     }
-    true
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Fop<T: Parses> {
+    pub fop: OpFunc<T>,
+    pub fop_id: u8,
+    pub args_id: u16,
+    pub next1: *const Fop<T>,
+    pub next2: *const Fop<T>,
+}
+
+impl<T: Parses> Fop<T> {
+    pub fn new(fop: OpFunc<T>, fop_id: u8, args_id: u16) -> Self {
+        Self {
+            fop,
+            fop_id,
+            args_id,
+            next1: 0 as *const Fop<T>,
+            next2: 0 as *const Fop<T>,
+        }
+    }
+
+    pub fn call(&self, vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: Args) {
+        unsafe {
+            (self.fop)(
+                vm,
+                snip,
+                tid,
+                args.at(self.args_id),
+                &*self.next1,
+                &*self.next2,
+            )
+        }
+    }
 }
 
 #[derive(Debug)]
-pub struct FOp<T: Parses> {
-    pub fun: fn(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
-    pub args_id: u16,
+pub struct IRFop {
+    pub fop_id: u8,
+    pub next_index1: usize,
+    pub next_index2: usize,
     // pub name: String,
 }
 
-impl<T: Parses> FOp<T> {
+impl IRFop {
     pub fn new(
-        fun: fn(vm: &mut Parser<T>, snip: &Snip<T>, tid: u16, args: &Args, args_id: u16) -> bool,
-        args_id: u16,
+        fop_id: u8,
+        next_index1: usize,
+        next_index2: usize,
         // name: String,
     ) -> Self {
-        Self { fun, args_id }
+        Self {
+            fop_id,
+            next_index1,
+            next_index2,
+        }
     }
 }
 
 #[derive(Debug)]
-pub struct FOps<T: Parses> {
-    pub args: Args,
-    pub fops: Vec<FOp<T>>,
+pub struct Fops<T: Parses> {
+    pub args: Vec<u8>,
+    pub fops: Vec<Fop<T>>,
 }
 
-impl<T: Parses> FOps<T> {
+impl<T: Parses> Fops<T> {
     pub fn new(mut ir: Vec<Op<T>>) -> Self {
         if ir.len() >= u16::MAX as usize {
             panic!("Too Many Ops");
         }
         ir.push(Op::Matched);
         let mut args: Vec<u8> = Vec::new();
-        let mut fops: Vec<FOp<T>> = Vec::new();
+        let mut ir_fops: Vec<IRFop> = Vec::new();
+        let mut fops: Vec<Fop<T>> = Vec::new();
         for (i, op) in ir.into_iter().enumerate() {
-            let index = i as u16;
+            let index = i;
             let args_index = args.len() as u16;
             match op {
                 Op::Matched => {
-                    fops.push(FOp::new(
-                        matched::<T>,
-                        args_index,
-                        // "Matched".to_string()
+                    ir_fops.push(IRFop::new(
+                        MATCHED, 0, 0, // "Matched".to_string()
                     ));
+                    fops.push(Fop::new(matched, MATCHED, args_index));
                 }
                 Op::Match(value) => {
-                    let bytes = value.to_bytes();
-                    // args.push(bytes.len() as u8);
-                    args.extend(bytes);
-                    fops.push(FOp::new(
-                        try_match::<T>,
-                        args_index,
-                        // format!("Match({:?})", bytes),
+                    args.extend(value.to_bytes());
+                    ir_fops.push(IRFop::new(
+                        MATCH,
+                        index + 1,
+                        0, // format!("Match({:?})", bytes),
                     ));
+                    fops.push(Fop::new(try_match, MATCH, args_index));
                 }
                 Op::MatchAny => {
-                    fops.push(FOp::new(
-                        match_any::<T>,
-                        args_index,
-                        // "MatchAny".to_string()
+                    ir_fops.push(IRFop::new(
+                        MATCH_ANY,
+                        index + 1,
+                        0, // "MatchAny".to_string()
                     ));
+                    fops.push(Fop::new(match_any, MATCH_ANY, args_index));
                 }
                 Op::Jump(j) => {
                     let target = match j {
                         Jmp::Up(add) => index + add,
                         Jmp::Back(sub) => index - sub,
                     };
-                    args.extend(target.to_be_bytes());
-                    fops.push(FOp::new(
-                        jump::<T>, args_index,
-                        // format!("Jump({})", target)
+                    ir_fops.push(IRFop::new(
+                        JUMP, target, 0, // format!("Jump({})", target)
                     ));
+                    fops.push(Fop::new(jump, JUMP, args_index));
                 }
                 Op::Branch(j1, j2) => {
                     let t1 = match j1 {
@@ -333,105 +430,113 @@ impl<T: Parses> FOps<T> {
                         Jmp::Up(add) => index + add,
                         Jmp::Back(sub) => index - sub,
                     };
-                    args.extend(t1.to_be_bytes());
-                    args.extend(t2.to_be_bytes());
-                    fops.push(FOp::new(
-                        branch_off::<T>,
-                        args_index,
-                        // format!("Branch({}, {})", t1, t2),
+                    ir_fops.push(IRFop::new(
+                        BRANCH, t1, t2, // format!("Branch({}, {})", t1, t2),
                     ));
+                    fops.push(Fop::new(branch_off, BRANCH, args_index));
                 }
                 Op::Scope => {
-                    fops.push(FOp::new(
-                        scope::<T>, args_index,
-                        // "Scope".to_string()
+                    ir_fops.push(IRFop::new(
+                        SCOPE,
+                        index + 1,
+                        0, // "Scope".to_string()
                     ));
+                    fops.push(Fop::new(scope, SCOPE, args_index));
                 }
                 Op::CommitScope => {
-                    fops.push(FOp::new(
-                        commit_scope::<T>,
-                        args_index,
-                        // "CommitScope".to_string(),
+                    ir_fops.push(IRFop::new(
+                        COMMIT_SCOPE,
+                        index + 1,
+                        0, // "CommitScope".to_string(),
                     ));
+                    fops.push(Fop::new(commit_scope, COMMIT_SCOPE, args_index));
                 }
                 Op::KillScope => {
-                    fops.push(FOp::new(
-                        kill_scope::<T>,
-                        args_index,
-                        // "KillScope".to_string(),
+                    ir_fops.push(IRFop::new(
+                        KILL_SCOPE, 0, 0, // "KillScope".to_string(),
                     ));
+                    fops.push(Fop::new(kill_scope, KILL_SCOPE, args_index));
                 }
                 Op::Save => {
-                    fops.push(FOp::new(
-                        save::<T>, args_index,
-                        // "Save".to_string()
+                    ir_fops.push(IRFop::new(
+                        SAVE,
+                        index + 1,
+                        0, // "Save".to_string()
                     ));
+                    fops.push(Fop::new(save, SAVE, args_index));
                 }
                 Op::Unsave => {
-                    fops.push(FOp::new(
-                        unsave::<T>,
-                        args_index,
-                        // "Unsave".to_string()
+                    ir_fops.push(IRFop::new(
+                        UNSAVE,
+                        index + 1,
+                        0, // "Unsave".to_string()
                     ));
+                    fops.push(Fop::new(unsave, UNSAVE, args_index));
                 }
                 Op::StartTok => {
-                    fops.push(FOp::new(
-                        start_tok::<T>,
-                        args_index,
-                        // "StartTok".to_string()
+                    ir_fops.push(IRFop::new(
+                        START_TOK,
+                        index + 1,
+                        0, // "StartTok".to_string()
                     ));
+                    fops.push(Fop::new(start_tok, START_TOK, args_index));
                 }
                 Op::EndTok => {
-                    fops.push(FOp::new(
-                        end_tok::<T>,
-                        args_index,
-                        // "EndTok".to_string()
+                    ir_fops.push(IRFop::new(
+                        END_TOK,
+                        index + 1,
+                        0, // "EndTok".to_string()
                     ));
+                    fops.push(Fop::new(end_tok, END_TOK, args_index));
                 }
                 Op::StartLoop => {
-                    fops.push(FOp::new(
-                        start_loop::<T>,
-                        args_index,
-                        // "StartLoop".to_string(),
+                    ir_fops.push(IRFop::new(
+                        START_LOOP,
+                        index + 1,
+                        0, // "StartLoop".to_string(),
                     ));
+                    fops.push(Fop::new(start_loop, START_LOOP, args_index));
                 }
-                Op::EndLoop(min, max) => {
+                Op::EndLoop(jump_back, min, max) => {
                     args.extend(min.to_be_bytes());
                     args.extend(max.to_be_bytes());
-                    fops.push(FOp::new(
-                        end_loop::<T>,
-                        args_index,
-                        // format!("EndLoop({}, {})", min, max),
+                    ir_fops.push(IRFop::new(
+                        END_LOOP,
+                        index - jump_back,
+                        index + 1, // format!("EndLoop({}, {})", min, max),
                     ));
+                    fops.push(Fop::new(end_loop, END_LOOP, args_index));
                 }
             }
         }
-        // args.push(0);
-        Self {
-            args: Args::new(args),
-            fops,
+        for (i, irfop) in ir_fops.iter().enumerate() {
+            match irfop.fop_id {
+                MATCHED => {}
+                BRANCH | END_LOOP => {
+                    let [fop, next1, next2] = fops
+                        .get_disjoint_mut([i, irfop.next_index1, irfop.next_index2])
+                        .unwrap();
+                    fop.next1 = next1;
+                    fop.next2 = next2;
+                }
+                _ => {
+                    let [fop, next1] = fops.get_disjoint_mut([i, irfop.next_index1]).unwrap();
+                    fop.next1 = next1;
+                }
+            }
+        }
+        Self { args, fops }
+    }
+
+    pub fn get_first_fop(&self) -> *const Fop<T> {
+        self.fops.first().unwrap()
+    }
+
+    pub fn call(&self, vm_ptr: *mut Parser<T>, snip: &Snip<T>, tid: u16) {
+        unsafe {
+            let vm = &mut *vm_ptr;
+            let fop = &*vm.threads[tid].ip;
+            fop.call(vm, snip, tid, Args::new(&self.args, fop.args_id));
         }
     }
-
-    pub fn call(&self, vm_ptr: *mut Parser<T>, snip: &Snip<T>, tid: u16) -> bool {
-        let vm = unsafe { &mut *vm_ptr };
-        let fop = &self.fops[vm.threads[tid].ip as usize];
-        // println!(
-        //     "Thread {}: snipdex={}, snip={:?}, fop={:?}",
-        //     tid, snip.index, snip.value, fop.fun
-        // );
-        (fop.fun)(vm, snip, tid, &self.args, fop.args_id)
-    }
-
-    // pub fn run(&self, vm_ptr: *mut Parser<T>, snip: &Snip<T>, tid: u16) {
-    //     let vm = unsafe { &mut *vm_ptr };
-    //     let mut fop = &self.fops[vm.threads[tid].ip as usize];
-    //     while (fop.fun)(vm, snip, tid, &self.args, fop.args_id) {
-    //         println!(
-    //             "Thread {}: snipdex={}, snip={:?}, fop={:?}",
-    //             tid, snip.index, snip.value, fop.name
-    //         );
-    //         fop = &self.fops[vm.threads[tid].ip as usize];
-    //     }
-    // }
 }

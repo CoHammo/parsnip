@@ -9,17 +9,17 @@ pub const BRANCH: u8 = 4;
 pub const SCOPE: u8 = 5;
 pub const COMMIT_SCOPE: u8 = 6;
 pub const KILL_SCOPE: u8 = 7;
-pub const START_TOK: u8 = 8;
-pub const END_TOK: u8 = 9;
-pub const SAVE: u8 = 10;
-pub const UNSAVE: u8 = 11;
-pub const START_LOOP: u8 = 12;
-pub const END_LOOP: u8 = 13;
+pub const SAVE: u8 = 8;
+pub const UNSAVE: u8 = 9;
+pub const START_LOOP: u8 = 10;
+pub const END_LOOP: u8 = 11;
+pub const START_TOK: u8 = 12;
+pub const END_TOK: u8 = 13;
 
 #[derive(Debug, Clone)]
 pub enum Jmp {
-    Up(u16),
-    Back(u16),
+    Up(usize),
+    Back(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -37,7 +37,7 @@ pub enum Op<T: Parses> {
     Save,
     Unsave,
     StartLoop,
-    EndLoop(u32, u32),
+    EndLoop(usize, u32, u32),
 }
 
 impl<T: Parses> Op<T> {
@@ -56,7 +56,7 @@ impl<T: Parses> Op<T> {
             Op::Save => SAVE,
             Op::Unsave => UNSAVE,
             Op::StartLoop => START_LOOP,
-            Op::EndLoop(_, _) => END_LOOP,
+            Op::EndLoop(_, _, _) => END_LOOP,
         }
     }
 }
@@ -64,6 +64,7 @@ impl<T: Parses> Op<T> {
 #[derive(Debug)]
 pub struct Ops {
     ops: Vec<u8>,
+    data_len: u8,
 }
 
 impl Ops {
@@ -72,17 +73,16 @@ impl Ops {
             panic!("Too Many Ops");
         }
         let mut ops: Vec<u8> = Vec::new();
-        let mut indices: Vec<u16> = Vec::new();
-        let mut jumps: Vec<(u16, u16)> = Vec::new();
+        let mut indices: Vec<usize> = Vec::new();
+        let mut jumps: Vec<(usize, usize)> = Vec::new();
         for (i, op) in ir.into_iter().enumerate() {
-            let index = i as u16;
-            let byte_index = ops.len() as u16;
+            let index = i;
+            let byte_index = ops.len();
             indices.push(byte_index);
             ops.push(op.byte());
             match op {
                 Op::Match(val) => {
                     let bytes = val.to_bytes();
-                    ops.push(bytes.len() as u8);
                     ops.extend(bytes);
                 }
                 Op::Jump(jump) => {
@@ -103,7 +103,9 @@ impl Ops {
                     }
                     ops.extend([0, 0, 0, 0]);
                 }
-                Op::EndLoop(min, max) => {
+                Op::EndLoop(jump_back, min, max) => {
+                    jumps.push((byte_index, index - jump_back));
+                    ops.extend([0, 0]);
                     ops.extend(min.to_be_bytes());
                     ops.extend(max.to_be_bytes());
                 }
@@ -111,23 +113,25 @@ impl Ops {
             }
         }
         for (at, to) in jumps {
-            let target_index = indices[to as usize];
+            let target_index = indices[to];
             let up = (target_index >> 8) as u8;
             let low = target_index as u8;
-            ops[at as usize + 1] = up;
-            ops[at as usize + 2] = low;
+            ops[at + 1] = up;
+            ops[at + 2] = low;
         }
         ops.push(MATCHED);
 
-        Self { ops }
+        Self {
+            ops,
+            data_len: T::bytes_len(),
+        }
     }
 
     pub fn get_match_slice(&self, index: u16) -> &[u8] {
-        let len = self[index + 1] as u16;
         unsafe {
             &self
                 .ops
-                .get_unchecked((index + 2) as usize..((index + 2 + len) as usize))
+                .get_unchecked((index + 1) as usize..((index + 1 + self.data_len as u16) as usize))
         }
     }
 
@@ -148,19 +152,23 @@ impl Ops {
         )
     }
 
-    pub fn get_loop_bounds(&self, index: u16) -> (u32, u32) {
-        let up1 = self[index + 1];
-        let upmid1 = self[index + 2];
-        let lowmid1 = self[index + 3];
-        let low1 = self[index + 4];
+    pub fn get_loop_bounds(&self, index: u16) -> (u16, u32, u32) {
+        let startupper = self[index + 1];
+        let startlower = self[index + 2];
+        let start = (startupper as u16) << 8 | startlower as u16;
+
+        let up1 = self[index + 3];
+        let upmid1 = self[index + 4];
+        let lowmid1 = self[index + 5];
+        let low1 = self[index + 6];
         let min = (up1 as u32) << 24 | (upmid1 as u32) << 16 | (lowmid1 as u32) << 8 | low1 as u32;
 
-        let up2 = self[index + 5];
-        let upmid2 = self[index + 6];
-        let lowmid2 = self[index + 7];
-        let low2 = self[index + 8];
+        let up2 = self[index + 7];
+        let upmid2 = self[index + 8];
+        let lowmid2 = self[index + 9];
+        let low2 = self[index + 10];
         let max = (up2 as u32) << 24 | (upmid2 as u32) << 16 | (lowmid2 as u32) << 8 | low2 as u32;
-        (min, max)
+        (start, min, max)
     }
 
     pub fn get_info_at(&self, index: u16) -> (u8, String, u8) {
@@ -196,8 +204,12 @@ impl Ops {
             UNSAVE => (UNSAVE, format!("{}:Unsave", index), 1),
             START_LOOP => (START_LOOP, format!("{}:StartLoop", index), 1),
             END_LOOP => {
-                let (min, max) = self.get_loop_bounds(index);
-                (END_LOOP, format!("{}:EndLoop({}, {})", index, min, max), 9)
+                let (start, min, max) = self.get_loop_bounds(index);
+                (
+                    END_LOOP,
+                    format!("{}:EndLoop({}, {}, {})", index, start, min, max),
+                    9,
+                )
             }
             op => {
                 panic!("Bad Op Code {}", op)

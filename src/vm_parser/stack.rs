@@ -9,8 +9,8 @@ pub enum Var {
 }
 
 impl Var {
-    pub fn loo(start: u16) -> Var {
-        Var::Loop(Loop::new(start))
+    pub fn loo() -> Var {
+        Var::Loop(Loop::new())
     }
 
     pub fn save(ip: u16, event: u32, scope: Scope) -> Var {
@@ -20,12 +20,11 @@ impl Var {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Loop {
-    pub start: u16,
     pub count: u32,
 }
 impl Loop {
-    pub fn new(start: u16) -> Self {
-        Self { start, count: 0 }
+    pub fn new() -> Self {
+        Self { count: 0 }
     }
 }
 
@@ -157,17 +156,5 @@ impl Stack {
         } else {
             None
         }
-    }
-
-    pub fn contains(&self, mut id: u16, var: Var) -> bool {
-        while id != 0 {
-            let node = self.at(id);
-            if node.var == var {
-                return true;
-            } else {
-                id = node.prev;
-            }
-        }
-        false
     }
 }

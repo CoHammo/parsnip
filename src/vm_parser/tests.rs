@@ -22,11 +22,12 @@ fn test_vm() {
         1,
         0,
     ));
+    // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(685000);
-    // let source = "Hello Man\n".repeat(1000000);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(890000);
+    // let source = "Hello Man\n".repeat(8000000);
 
-    parser.debug();
+    // parser.debug();
     let start = Instant::now();
     let mut res = parser.parse(&source);
 
@@ -44,9 +45,9 @@ fn test_vm() {
     let duration = start.elapsed();
 
     // println!("Program:\n{}", parser.ops.debug_str(true));
+    // println!("{:?}", parser.fops.args);
     // println!("After Building Events: {:#?}", res);
     println!("Tokens: {:?}", buf);
-    println!("{:?}", parser.fops.args);
     println!("Stat: {:?}", parser.stat);
     // println!("Threads: {:#?}", parser.threads);
     println!("Total Threads: {}", parser.threads.len());
@@ -68,6 +69,6 @@ fn test_compiler() {
     ]);
     println!("{:?}", ir);
     let parser = Parser::new(ir);
-    println!("{:?}", parser.fops);
-    // println!("{}", parser.fops.debug_str(false));
+    println!("{:?}", parser.ops);
+    println!("{}", parser.ops.debug_str(false));
 }
