@@ -32,7 +32,7 @@ impl Scopes {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Scope {
     val: u64,
     last: u8,
@@ -45,6 +45,10 @@ impl Scope {
 
     pub fn val(&self) -> u64 {
         self.val
+    }
+
+    pub fn last_id(&self) -> u8 {
+        self.last
     }
 
     pub fn add_scope(&mut self, id: u8) {

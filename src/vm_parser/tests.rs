@@ -12,20 +12,20 @@ fn test_vm() {
                 run(vec![
                     tok(run(vec![rep("#", 1, 6), str(" ")])),
                     commit(),
-                    tok(till2("\n")),
+                    tok(till("\n")),
                 ]),
                 true,
             ),
-            branch(run(vec![tok("> "), commit(), tok(till2("\n"))]), true),
-            branch(till2("\n"), false),
+            branch(run(vec![tok("> "), commit(), tok(till("\n"))]), true),
+            branch(till("\n"), false),
         ])),
         1,
         0,
     ));
     // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(890000);
-    // let source = "Hello Man\n".repeat(8000000);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(875000);
+    // let source = "Hello Man\n".repeat(4500000);
 
     // parser.debug();
     let start = Instant::now();
@@ -47,7 +47,7 @@ fn test_vm() {
     // println!("Program:\n{}", parser.ops.debug_str(true));
     // println!("{:?}", parser.fops.args);
     // println!("After Building Events: {:#?}", res);
-    println!("Tokens: {:?}", buf);
+    // println!("Tokens: {:?}", buf);
     println!("Stat: {:?}", parser.stat);
     // println!("Threads: {:#?}", parser.threads);
     println!("Total Threads: {}", parser.threads.len());

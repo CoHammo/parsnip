@@ -3,7 +3,6 @@ mod events;
 mod iter;
 mod scopes;
 mod stack;
-// mod test_threads;
 // mod fops;
 mod ops;
 mod tests;
@@ -18,6 +17,8 @@ use scopes::*;
 use stack::*;
 use threads::*;
 
+use std::collections::BTreeSet;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stat {
     Running,
@@ -28,10 +29,12 @@ pub enum Stat {
 pub struct Parser {
     stat: Stat,
     debug: bool,
+    seen: Vec<ThreadState>,
+    // seen: BTreeSet<ThreadState>,
     ops: Ops,
     scopes: Scopes,
-    threads: Threads,
     stack: Stack,
+    threads: Threads,
     events: EventsBuilder,
     best_match: Option<u32>,
 }
@@ -41,6 +44,7 @@ impl Parser {
         Self {
             stat: Stat::Running,
             debug: false,
+            seen: Vec::new(),
             ops: Ops::new(ops),
             scopes: Scopes::new(),
             threads: Threads::new(),
@@ -55,6 +59,16 @@ impl Parser {
         // self.threads.debug = self.debug;
     }
 
+    fn was_seen(&mut self, id: u16, ip: u16) -> bool {
+        let state = self.threads[id].get_state(ip);
+        if self.seen.contains(&state) {
+            true
+        } else {
+            self.seen.push(state);
+            false
+        }
+    }
+
     fn kill_thread(&mut self, id: u16, unref_events: bool) {
         let thread = &mut self.threads[id];
         self.stack.unref(thread.stack);
@@ -67,9 +81,7 @@ impl Parser {
 
     pub fn parse<T: Parses, I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {
         let mut snips = source.snips(..);
-        while let Some(snip) = snips.next()
-            && self.stat == Stat::Running
-        {
+        while let Some(snip) = snips.next() {
             self.take_snip::<T, I>(&snip);
         }
 
@@ -104,6 +116,10 @@ impl Parser {
                         self.ops.get_info_at(ip).1
                     );
                 }
+                if self.was_seen(id, ip) {
+                    self.kill_thread(id, true);
+                    break;
+                }
                 match self.ops[ip] {
                     MATCHED => {
                         let thread = &mut self.threads[id];
@@ -118,19 +134,18 @@ impl Parser {
                     }
                     MATCH => {
                         if let Some(value) = &snip.value {
+                            let thread = &mut self.threads[id];
                             let slice = self.ops.get_match_slice(ip);
                             if value.matches(slice) {
                                 ip += (slice.len() + 1) as u16;
-                                // } else if thread.saves > 0 {
-                                //     if self.debug {
-                                //         println!("    Rewinding...");
-                                //     }
-                                // let event = thread.event;
-                                // let scope = thread.scope.val();
-                                // thread.rewind(&mut self.state);
-                                // self.scopes.kill_scopes(thread.scope.diff(scope));
-                                // self.events.upref(thread.event);
-                                // self.events.unref(event);
+                            } else if thread.saves > 0 {
+                                if self.debug {
+                                    println!("    Rewinding...");
+                                }
+                                let event = thread.event;
+                                thread.rewind(&mut self.stack);
+                                self.events.upref(thread.event);
+                                self.events.unref(event);
                             } else {
                                 self.kill_thread(id, true);
                             }
@@ -250,6 +265,7 @@ impl Parser {
             self.threads[id].ip = ip;
         } // Threads Loop
 
+        self.seen.clear();
         if !self.threads.restart() {
             self.stat = match self.best_match {
                 Some(_) => Stat::Matched,

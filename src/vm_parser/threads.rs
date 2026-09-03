@@ -1,12 +1,21 @@
-use super::{Parses, Scope};
-use std::{
-    marker::PhantomData,
-    ops::{Index, IndexMut},
-};
+use super::{Scope, Stack, Var};
+use std::ops::{Index, IndexMut};
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ThreadState {
+    ip: u16,
+    scope: u64,
+    last_scope: u8,
+    stack: u16,
+    saves: u16,
+    event: u32,
+}
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: u16,
+    // scope: u64,
+    // last_scope: u8,
     pub scope: Scope,
     pub stack: u16,
     pub saves: u16,
@@ -19,6 +28,8 @@ impl Thread {
     pub fn new() -> Self {
         Self {
             ip: 0,
+            // scope: 0,
+            // last_scope: 0,
             scope: Scope::new(),
             stack: 0,
             saves: 0,
@@ -28,17 +39,71 @@ impl Thread {
         }
     }
 
-    // pub fn rewind(&mut self, state: &mut StateStack) {
-    //     while let Some(st) = state.check(self.state) {
-    //         if let &State::Save { ip, event, scope } = st {
-    //             self.ip = ip;
-    //             self.event = event;
-    //             self.scope = scope;
-    //             return;
+    pub fn get_state(&self, ip: u16) -> ThreadState {
+        ThreadState {
+            ip,
+            scope: self.scope.val(),
+            last_scope: self.scope.last_id(),
+            stack: self.stack,
+            saves: self.saves,
+            event: self.event,
+        }
+    }
+
+    pub fn rewind(&mut self, state: &mut Stack) {
+        while let Some(st) = state.last(self.stack) {
+            if let &Var::Save { ip, event, scope } = st {
+                self.ip = ip;
+                self.scope = scope;
+                self.event = event;
+                return;
+            } else {
+                let (prev, _) = state.pop_stack(self.stack).unwrap();
+                self.stack = prev;
+            }
+        }
+    }
+
+    // pub fn get_scope(&self) -> u64 {
+    //     self.scope
+    // }
+
+    // pub fn get_last_scope_id(&self) -> u8 {
+    //     self.last_scope
+    // }
+
+    // pub fn get_last_scope(&self) -> Option<u8> {
+    //     if self.scope != 0 {
+    //         Some(self.last_scope)
+    //     } else {
+    //         None
+    //     }
+    // }
+
+    // pub fn add_scope(&mut self, id: u8) {
+    //     self.scope |= 1u64 << id;
+    //     self.last_scope = id;
+    // }
+
+    // pub fn pop_scope(&mut self) -> Option<u8> {
+    //     if self.scope != 0 {
+    //         let bit = 1u64 << self.last_scope;
+    //         self.scope &= !bit;
+    //         if self.scope != 0 {
+    //             let last = self.last_scope;
+    //             let mask = u64::MAX << last;
+    //             let mut temp = (!mask & self.scope).leading_zeros() as u8;
+    //             if temp == 64 {
+    //                 temp = (mask & self.scope).leading_zeros() as u8;
+    //             }
+    //             let id = 63u8 - temp;
+    //             self.last_scope = id;
+    //             Some(last)
     //         } else {
-    //             let (prev, _) = state.pop(self.state);
-    //             self.state = prev;
+    //             Some(self.last_scope)
     //         }
+    //     } else {
+    //         None
     //     }
     // }
 
