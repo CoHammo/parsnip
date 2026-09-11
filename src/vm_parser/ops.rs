@@ -64,8 +64,9 @@ impl<T: Parses> Op<T> {
 #[derive(Debug)]
 pub struct Ops {
     ops: Vec<u8>,
-    data_len: u8,
+    value_size: u8,
     len: u16,
+    bytes_len: u16,
 }
 
 impl Ops {
@@ -74,14 +75,14 @@ impl Ops {
             panic!("Too Many Ops");
         }
         let mut ops: Vec<u8> = Vec::new();
-        let mut indices: Vec<usize> = Vec::new();
-        let mut jumps: Vec<(usize, usize)> = Vec::new();
+        let mut index_map: Vec<usize> = Vec::new();
+        let mut jump_map: Vec<(usize, usize)> = Vec::new();
         let mut len: u16 = 0;
         for (i, op) in ir.into_iter().enumerate() {
             len += 1;
             let index = i;
             let byte_index = ops.len();
-            indices.push(byte_index);
+            index_map.push(byte_index);
             ops.push(op.byte());
             match op {
                 Op::Match(val) => {
@@ -90,24 +91,24 @@ impl Ops {
                 }
                 Op::Jump(jump) => {
                     match jump {
-                        Jmp::Up(add) => jumps.push((byte_index, index + add)),
-                        Jmp::Back(sub) => jumps.push((byte_index, index - sub)),
+                        Jmp::Up(add) => jump_map.push((byte_index, index + add)),
+                        Jmp::Back(sub) => jump_map.push((byte_index, index - sub)),
                     }
                     ops.extend([0, 0]);
                 }
                 Op::Branch(j1, j2) => {
                     match j1 {
-                        Jmp::Up(add) => jumps.push((byte_index, index + add)),
-                        Jmp::Back(sub) => jumps.push((byte_index, index - sub)),
+                        Jmp::Up(add) => jump_map.push((byte_index, index + add)),
+                        Jmp::Back(sub) => jump_map.push((byte_index, index - sub)),
                     }
                     match j2 {
-                        Jmp::Up(add) => jumps.push((byte_index + 2, index + add)),
-                        Jmp::Back(sub) => jumps.push((byte_index + 2, index - sub)),
+                        Jmp::Up(add) => jump_map.push((byte_index + 2, index + add)),
+                        Jmp::Back(sub) => jump_map.push((byte_index + 2, index - sub)),
                     }
                     ops.extend([0, 0, 0, 0]);
                 }
                 Op::EndLoop(jump_back, min, max) => {
-                    jumps.push((byte_index, index - jump_back));
+                    jump_map.push((byte_index, index - jump_back));
                     ops.extend([0, 0]);
                     ops.extend(min.to_be_bytes());
                     ops.extend(max.to_be_bytes());
@@ -115,31 +116,36 @@ impl Ops {
                 _ => {}
             }
         }
-        for (at, to) in jumps {
-            let target_index = indices[to];
-            let up = (target_index >> 8) as u8;
-            let low = target_index as u8;
-            ops[at + 1] = up;
-            ops[at + 2] = low;
+        for (from_byte_index, target_ir_index) in jump_map {
+            let target_byte_index = index_map[target_ir_index];
+            let up = (target_byte_index >> 8) as u8;
+            let low = target_byte_index as u8;
+            ops[from_byte_index + 1] = up;
+            ops[from_byte_index + 2] = low;
         }
         ops.push(MATCHED);
-
+        let bytes_len = ops.len() as u16;
         Self {
             ops,
-            data_len: T::bytes_len(),
+            value_size: T::size(),
             len,
+            bytes_len,
         }
     }
 
-    pub fn len(&self) -> u16 {
+    pub fn op_len(&self) -> u16 {
         self.len
+    }
+
+    pub fn bytes_len(&self) -> u16 {
+        self.bytes_len
     }
 
     pub fn get_match_slice(&self, index: u16) -> &[u8] {
         unsafe {
-            &self
-                .ops
-                .get_unchecked((index + 1) as usize..((index + 1 + self.data_len as u16) as usize))
+            &self.ops.get_unchecked(
+                (index + 1) as usize..((index + 1 + self.value_size as u16) as usize),
+            )
         }
     }
 

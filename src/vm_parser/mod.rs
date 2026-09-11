@@ -10,12 +10,10 @@ mod threads;
 pub use compilers::*;
 use events::*;
 use iter::*;
-// use old_scopes::*;
 use ops::*;
+use scopes::*;
 use stack::*;
 use threads::*;
-
-use crate::vm_parser::scopes::ScopeStack;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Stat {
@@ -24,6 +22,7 @@ pub enum Stat {
     Failed,
 }
 
+#[derive(Debug)]
 pub struct Parser {
     stat: Stat,
     debug: bool,
@@ -39,7 +38,7 @@ pub struct Parser {
 impl Parser {
     pub fn new<T: Parses>(ops: Vec<Op<T>>) -> Self {
         let cops = Ops::new(ops);
-        Self {
+        let me = Self {
             stat: Stat::Running,
             debug: false,
             seen: Vec::new(),
@@ -49,7 +48,8 @@ impl Parser {
             stack: Stack::new(),
             events: EventsBuilder::new(),
             best_match: None,
-        }
+        };
+        me
     }
 
     pub fn debug(&mut self) {
@@ -58,7 +58,7 @@ impl Parser {
     }
 
     fn seen(&mut self, id: u16, ip: u16) -> bool {
-        let state = self.threads[id].get_state(ip);
+        let state = self.threads[id].state(ip);
         if self.seen.contains(&state) {
             true
         } else {
@@ -105,10 +105,6 @@ impl Parser {
                 self.kill_thread(id, true);
                 continue;
             }
-            // if self.scopes.is_dead(self.threads[id].scope.val()) {
-            //     self.kill_thread(id, true);
-            //     continue;
-            // }
             loop {
                 if self.debug {
                     println!(
@@ -119,10 +115,6 @@ impl Parser {
                         self.ops.get_info_at(ip).1
                     );
                 }
-                // if self.was_seen(id, ip) {
-                //     self.kill_thread(id, true);
-                //     break;
-                // }
                 match self.ops[ip] {
                     MATCHED => {
                         let thread = &mut self.threads[id];
@@ -202,7 +194,6 @@ impl Parser {
                     SCOPE => {
                         let thread = &mut self.threads[id];
                         thread.scope = self.scopes.get_next_scope(thread.scope);
-                        // self.threads[id].scope.add_scope(self.scopes.next_scope());
                         ip += 1;
                     }
                     COMMIT_SCOPE => {
@@ -210,7 +201,6 @@ impl Parser {
                         if let Some(prev_scope) = self.scopes.pop_scope(thread.scope) {
                             self.scopes.kill_scope(thread.scope);
                             thread.scope = prev_scope;
-                            // self.scopes.kill_scope(scope_id);
                             ip += 1;
                         } else {
                             println!("Tried to commit a scope that doesn't exist");
@@ -221,12 +211,6 @@ impl Parser {
                     KILL_SCOPE => {
                         self.scopes.kill_scope(self.threads[id].scope);
                         self.kill_thread(id, true);
-                        // if let Some(scope_id) = self.threads[id].scope.last_scope() {
-                        //     self.scopes.kill_scope(scope_id);
-                        // } else {
-                        //     println!("Tried to kill a scope that doesn't exist");
-                        //     self.stat = Stat::Failed;
-                        // }
                         break;
                     }
                     SAVE => {

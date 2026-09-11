@@ -22,10 +22,10 @@ fn test_vm() {
         1,
         0,
     ));
-    // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
+    // let mut parser = Parser::new(str("Hello Man\n"));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(650000);
-    // let source = "Hello Man\n".repeat(4500000);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(800000);
+    // let source = "Hello Man\n".repeat(1);
 
     // parser.debug();
     let start = Instant::now();

@@ -3,17 +3,26 @@ use crate::vm_parser::scopes::ScopeStack;
 use super::{Stack, Var};
 use std::ops::{Index, IndexMut};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct ThreadState {
     ip: u16,
     scope: u16,
     stack: u16,
 }
 
+impl Default for ThreadState {
+    fn default() -> Self {
+        ThreadState {
+            ip: 0,
+            scope: 0,
+            stack: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: u16,
-    // pub scope: Scope,
     pub scope: u16,
     pub stack: u16,
     pub saves: u16,
@@ -35,12 +44,13 @@ impl Thread {
         }
     }
 
-    pub fn get_state(&self, ip: u16) -> ThreadState {
-        ThreadState {
+    pub fn state(&self, ip: u16) -> ThreadState {
+        let state = ThreadState {
             ip,
             scope: self.scope,
             stack: self.stack,
-        }
+        };
+        state
     }
 
     pub fn rewind(&mut self, state: &mut Stack, scopes: &mut ScopeStack) {
