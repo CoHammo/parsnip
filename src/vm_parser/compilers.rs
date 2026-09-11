@@ -24,7 +24,7 @@ impl<T: Parses> Compiles<T> for Vec<Op<T>> {
 #[derive(Debug, Clone)]
 pub struct Branch<T: Parses> {
     ops: Vec<Op<T>>,
-    commits: bool,
+    early_commit: bool,
     len: usize,
 }
 
@@ -90,10 +90,14 @@ pub fn till<T: Parses>(values: impl Compiles<T>) -> Vec<Op<T>> {
     ops
 }
 
-pub fn branch<T: Parses>(values: impl Compiles<T>, commits: bool) -> Branch<T> {
+pub fn branch<T: Parses>(values: impl Compiles<T>, early_commit: bool) -> Branch<T> {
     let ops = values.cops();
     let len = ops.len() + 1;
-    Branch { ops, commits, len }
+    Branch {
+        ops,
+        early_commit,
+        len,
+    }
 }
 
 pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
@@ -103,7 +107,7 @@ pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
     let mut total_len: usize = 0;
     for (i, branch) in branches.iter_mut().enumerate() {
         if i == num_branches - 1 {
-            match branch.commits {
+            match branch.early_commit {
                 true => {
                     total_len += branch.len;
                     branch.ops.push(Op::Jump(Jmp::Up(2)));
@@ -122,7 +126,7 @@ pub fn alt<T: Parses>(mut branches: Vec<Branch<T>>) -> Vec<Op<T>> {
             len += branch.len;
             ops.push(Op::Branch(Jmp::Up(1), Jmp::Up(len + branch_ops_left + 1)));
 
-            let add_jump = if branch.commits { 2 } else { 1 };
+            let add_jump = if branch.early_commit { 2 } else { 1 };
             branch
                 .ops
                 .push(Op::Jump(Jmp::Up(total_len - len + add_jump)));

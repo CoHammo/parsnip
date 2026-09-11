@@ -1,22 +1,20 @@
-use super::{Scope, Stack, Var};
+use crate::vm_parser::scopes::ScopeStack;
+
+use super::{Stack, Var};
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ThreadState {
     ip: u16,
-    scope: u64,
-    last_scope: u8,
+    scope: u16,
     stack: u16,
-    saves: u16,
-    event: u32,
 }
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: u16,
-    // scope: u64,
-    // last_scope: u8,
-    pub scope: Scope,
+    // pub scope: Scope,
+    pub scope: u16,
     pub stack: u16,
     pub saves: u16,
     pub event: u32,
@@ -28,9 +26,7 @@ impl Thread {
     pub fn new() -> Self {
         Self {
             ip: 0,
-            // scope: 0,
-            // last_scope: 0,
-            scope: Scope::new(),
+            scope: 0,
             stack: 0,
             saves: 0,
             event: 0,
@@ -42,18 +38,18 @@ impl Thread {
     pub fn get_state(&self, ip: u16) -> ThreadState {
         ThreadState {
             ip,
-            scope: self.scope.val(),
-            last_scope: self.scope.last_id(),
+            scope: self.scope,
             stack: self.stack,
-            saves: self.saves,
-            event: self.event,
         }
     }
 
-    pub fn rewind(&mut self, state: &mut Stack) {
+    pub fn rewind(&mut self, state: &mut Stack, scopes: &mut ScopeStack) {
         while let Some(st) = state.last(self.stack) {
             if let &Var::Save { ip, event, scope } = st {
                 self.ip = ip;
+                while self.scope != scope {
+                    self.scope = scopes.pop_scope(self.scope).unwrap();
+                }
                 self.scope = scope;
                 self.event = event;
                 return;
@@ -63,49 +59,6 @@ impl Thread {
             }
         }
     }
-
-    // pub fn get_scope(&self) -> u64 {
-    //     self.scope
-    // }
-
-    // pub fn get_last_scope_id(&self) -> u8 {
-    //     self.last_scope
-    // }
-
-    // pub fn get_last_scope(&self) -> Option<u8> {
-    //     if self.scope != 0 {
-    //         Some(self.last_scope)
-    //     } else {
-    //         None
-    //     }
-    // }
-
-    // pub fn add_scope(&mut self, id: u8) {
-    //     self.scope |= 1u64 << id;
-    //     self.last_scope = id;
-    // }
-
-    // pub fn pop_scope(&mut self) -> Option<u8> {
-    //     if self.scope != 0 {
-    //         let bit = 1u64 << self.last_scope;
-    //         self.scope &= !bit;
-    //         if self.scope != 0 {
-    //             let last = self.last_scope;
-    //             let mask = u64::MAX << last;
-    //             let mut temp = (!mask & self.scope).leading_zeros() as u8;
-    //             if temp == 64 {
-    //                 temp = (mask & self.scope).leading_zeros() as u8;
-    //             }
-    //             let id = 63u8 - temp;
-    //             self.last_scope = id;
-    //             Some(last)
-    //         } else {
-    //             Some(self.last_scope)
-    //         }
-    //     } else {
-    //         None
-    //     }
-    // }
 
     pub fn dbg(&self) -> String {
         format!(
@@ -178,7 +131,7 @@ impl Threads {
         fork.ip = orig.ip;
         fork.scope = orig.scope;
         fork.stack = orig.stack;
-        fork.saves = orig.saves;
+        fork.saves = 0;
         fork.event = orig.event;
 
         fork.next = 0;

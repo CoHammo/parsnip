@@ -65,6 +65,7 @@ impl<T: Parses> Op<T> {
 pub struct Ops {
     ops: Vec<u8>,
     data_len: u8,
+    len: u16,
 }
 
 impl Ops {
@@ -75,7 +76,9 @@ impl Ops {
         let mut ops: Vec<u8> = Vec::new();
         let mut indices: Vec<usize> = Vec::new();
         let mut jumps: Vec<(usize, usize)> = Vec::new();
+        let mut len: u16 = 0;
         for (i, op) in ir.into_iter().enumerate() {
+            len += 1;
             let index = i;
             let byte_index = ops.len();
             indices.push(byte_index);
@@ -124,7 +127,12 @@ impl Ops {
         Self {
             ops,
             data_len: T::bytes_len(),
+            len,
         }
+    }
+
+    pub fn len(&self) -> u16 {
+        self.len
     }
 
     pub fn get_match_slice(&self, index: u16) -> &[u8] {

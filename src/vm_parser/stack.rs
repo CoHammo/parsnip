@@ -1,11 +1,9 @@
-use super::Scope;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Var {
     Empty,
     Loop(Loop),
     // Call(usize),
-    Save { ip: u16, event: u32, scope: Scope },
+    Save { ip: u16, event: u32, scope: u16 },
 }
 
 impl Var {
@@ -13,7 +11,7 @@ impl Var {
         Var::Loop(Loop::new())
     }
 
-    pub fn save(ip: u16, event: u32, scope: Scope) -> Var {
+    pub fn save(ip: u16, event: u32, scope: u16) -> Var {
         Var::Save { ip, event, scope }
     }
 }
