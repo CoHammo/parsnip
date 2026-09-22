@@ -1,14 +1,14 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Event {
     pub start: bool,
-    pub index: usize,
+    pub index: u32,
     prev: u32,
     next: u32,
     refs: u16,
 }
 
 impl Event {
-    pub fn new(start: bool, index: usize, prev: u32) -> Self {
+    pub fn new(start: bool, index: u32, prev: u32) -> Self {
         Self {
             start,
             index,
@@ -47,7 +47,7 @@ impl EventsBuilder {
         unsafe { self.stack.get_unchecked_mut(index as usize) }
     }
 
-    pub fn push_event(&mut self, start: bool, index: usize, prev: u32) -> u32 {
+    pub fn push_event(&mut self, start: bool, index: u32, prev: u32) -> u32 {
         let mut id = self.free;
         if self.free == 0 {
             id = self.stack.len() as u32;
@@ -65,10 +65,12 @@ impl EventsBuilder {
     }
 
     pub fn upref(&mut self, id: u32) {
-        let event = self.at(id);
-        event.refs += 1;
-        if event.refs == u16::MAX {
-            panic!("Event Ref Overflow!!");
+        if id != 0 {
+            let event = self.at(id);
+            event.refs += 1;
+            if event.refs == u16::MAX {
+                panic!("Event Ref Overflow!!");
+            }
         }
     }
 

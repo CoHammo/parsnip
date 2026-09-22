@@ -3,7 +3,12 @@ pub enum Var {
     Empty,
     Loop(Loop),
     // Call(usize),
-    Save { ip: u16, event: u32, scope: u16 },
+    Save {
+        ip: u16,
+        event: u32,
+        scope: u16,
+        peek: u16,
+    },
 }
 
 impl Var {
@@ -11,8 +16,13 @@ impl Var {
         Var::Loop(Loop::new())
     }
 
-    pub fn save(ip: u16, event: u32, scope: u16) -> Var {
-        Var::Save { ip, event, scope }
+    pub fn save(ip: u16, event: u32, scope: u16, peek: u16) -> Var {
+        Var::Save {
+            ip,
+            event,
+            scope,
+            peek,
+        }
     }
 }
 
@@ -119,7 +129,9 @@ impl Stack {
     }
 
     pub fn upref(&mut self, id: u16) {
-        self.at_mut(id).refs += 1;
+        if id != 0 {
+            self.at_mut(id).refs += 1;
+        }
     }
 
     pub fn unref(&mut self, mut id: u16) {

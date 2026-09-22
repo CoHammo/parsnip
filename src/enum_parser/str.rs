@@ -8,7 +8,7 @@ pub struct It<T: PItem> {
     index: usize,
 }
 impl<T: PItem> It<T> {
-    pub fn new(value: impl Parses<T>) -> Self {
+    pub fn new(value: impl ParsesT<T>) -> Self {
         let items = value.to_inner_store();
         let len = items.len();
         Self {
@@ -79,6 +79,6 @@ impl<T: PItem> ItemParser<T> for It<T> {
     }
 }
 
-pub fn it<T: PItem>(value: impl Parses<T>) -> Parser<T> {
+pub fn it<T: PItem>(value: impl ParsesT<T>) -> Parser<T> {
     Parser::It(It::new(value))
 }

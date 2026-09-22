@@ -1,26 +1,5 @@
 use super::*;
 
-pub trait Compiles<T: Parses> {
-    fn cops(self) -> Vec<Op<T>>;
-}
-
-impl Compiles<u8> for &str {
-    fn cops(self) -> Vec<Op<u8>> {
-        let bytes = self.as_bytes();
-        let mut ops = Vec::new();
-        for byte in bytes {
-            ops.push(Op::Match(*byte))
-        }
-        ops
-    }
-}
-
-impl<T: Parses> Compiles<T> for Vec<Op<T>> {
-    fn cops(self) -> Vec<Op<T>> {
-        self
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Branch<T: Parses> {
     ops: Vec<Op<T>>,
@@ -28,28 +7,38 @@ pub struct Branch<T: Parses> {
     len: usize,
 }
 
-pub fn str<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-    value.cops()
+pub fn str<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
+    value.ops()
 }
 
-pub fn tok<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-    let mut ops = value.cops();
+pub fn tok<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
+    let mut ops = value.ops();
     ops.insert(0, Op::StartTok);
     ops.push(Op::EndTok);
     ops
 }
 
-pub fn not<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-    let mut ops = vec![Op::Scope];
-    let inner = value.cops();
-    let len = inner.len() + 2;
-    ops.push(Op::Branch(Jmp::Up(len), Jmp::Up(1)));
+// pub fn not<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
+//     let mut ops = vec![Op::Scope];
+//     let inner = value.cops();
+//     let len = inner.len() + 2;
+//     ops.push(Op::Branch(Jmp::Up(len), Jmp::Up(1)));
+//     ops.extend(inner);
+//     ops.push(Op::KillScope);
+//     ops
+// }
+
+pub fn not<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
+    let inner = value.ops();
+    let mut ops = vec![Op::Peek(false, inner.len() + 2)];
+    // ops.push(Op::Branch(Jmp::Up(inner.len() + 3), Jmp::Up(1)));
+    // ops.push(Op::Scope(ScopeKind::NegativeLookahead));
     ops.extend(inner);
-    ops.push(Op::KillScope);
+    ops.push(Op::CommitPeek);
     ops
 }
 
-pub fn rep<T: Parses>(value: impl Compiles<T>, mut min: u32, mut max: u32) -> Vec<Op<T>> {
+pub fn rep<T: Parses>(value: impl ToOps<T>, mut min: u32, mut max: u32) -> Vec<Op<T>> {
     min = match min {
         0 => 1,
         m => m,
@@ -57,7 +46,7 @@ pub fn rep<T: Parses>(value: impl Compiles<T>, mut min: u32, mut max: u32) -> Ve
     if max > 0 && max <= min {
         max = min;
     }
-    let inner = value.cops();
+    let inner = value.ops();
     let len = inner.len();
     let mut ops = vec![Op::StartLoop];
     ops.extend(inner);
@@ -65,33 +54,33 @@ pub fn rep<T: Parses>(value: impl Compiles<T>, mut min: u32, mut max: u32) -> Ve
     ops
 }
 
-pub fn run<T: Parses>(values: Vec<impl Compiles<T>>) -> Vec<Op<T>> {
+pub fn run<T: Parses>(values: Vec<impl ToOps<T>>) -> Vec<Op<T>> {
     let mut ops = Vec::new();
     for inner in values {
-        ops.extend(inner.cops());
+        ops.extend(inner.ops());
     }
     ops
 }
 
-pub fn till2<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-    let mut ops = vec![Op::Scope];
-    ops.push(Op::Branch(Jmp::Up(3), Jmp::Up(1)));
-    ops.push(Op::MatchAny);
-    ops.push(Op::Jump(Jmp::Back(2)));
-    ops.extend(value.cops());
-    ops.push(Op::CommitScope);
-    ops
-}
+// pub fn till2<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
+//     let mut ops = vec![Op::Scope(ScopeKind::Normal)];
+//     ops.push(Op::Branch(Jmp::Up(3), Jmp::Up(1)));
+//     ops.push(Op::MatchAny);
+//     ops.push(Op::Jump(Jmp::Back(2)));
+//     ops.extend(value.cops());
+//     ops.push(Op::CommitScope);
+//     ops
+// }
 
-pub fn till<T: Parses>(values: impl Compiles<T>) -> Vec<Op<T>> {
+pub fn till<T: Parses>(values: impl ToOps<T>) -> Vec<Op<T>> {
     let mut ops = vec![Op::Save];
-    ops.extend(values.cops());
+    ops.extend(values.ops());
     ops.push(Op::Unsave);
     ops
 }
 
-pub fn branch<T: Parses>(values: impl Compiles<T>, early_commit: bool) -> Branch<T> {
-    let ops = values.cops();
+pub fn branch<T: Parses>(values: impl ToOps<T>, early_commit: bool) -> Branch<T> {
+    let ops = values.ops();
     let len = ops.len() + 1;
     Branch {
         ops,

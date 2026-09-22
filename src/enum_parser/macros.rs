@@ -41,7 +41,7 @@ macro_rules! parser_enum {
                 }
             }
 
-            pub fn parse(&mut self, parses: &impl Parses<T>, range: impl RangeBounds<usize>) -> Stat {
+            pub fn parse(&mut self, parses: &impl ParsesT<T>, range: impl RangeBounds<usize>) -> Stat {
                 match self {
                     Self::Default => Stat::Failed,
                     $(Self::$variant(p) => {

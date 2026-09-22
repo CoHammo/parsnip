@@ -22,22 +22,22 @@ fn test_vm() {
         1,
         0,
     ));
-    // let mut parser = Parser::new(str("Hello Man\n"));
+    // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(800000);
-    // let source = "Hello Man\n".repeat(1);
+    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(850000);
+    // let source = "Hello Man\n".repeat(5000000);
 
     // parser.debug();
     let start = Instant::now();
     let mut res = parser.parse(&source);
 
     let mut buf = String::new();
-    let mut prev_index = 0;
+    let mut prev_index: u32 = 0;
     while let Some(event) = res.next() {
         if event.start {
             buf.push('(');
         } else {
-            buf.push_str(&source[prev_index..event.index]);
+            buf.push_str(&source[prev_index as usize..event.index as usize]);
             buf.push(')');
             prev_index = event.index;
         }
@@ -45,8 +45,6 @@ fn test_vm() {
     let duration = start.elapsed();
 
     // println!("Program:\n{}", parser.ops.debug_str(true));
-    // println!("{:?}", parser.fops.args);
-    // println!("After Building Events: {:#?}", res);
     println!("Tokens: {:?}", buf);
     println!("Stat: {:?}", parser.stat);
     // println!("Threads: {:#?}", parser.threads);
@@ -71,4 +69,10 @@ fn test_compiler() {
     let parser = Parser::new(ir);
     println!("{:?}", parser.ops);
     println!("{}", parser.ops.debug_str(false));
+}
+
+#[test]
+fn test_math() {
+    let res: u32 = 5 / 2;
+    println!("{res}");
 }

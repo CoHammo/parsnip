@@ -8,7 +8,7 @@ pub trait PItem: Default + Clone + std::fmt::Debug {
     fn matches(&self, other: &Self) -> bool;
 }
 
-pub trait Parses<T: PItem> {
+pub trait ParsesT<T: PItem> {
     type Iter<'a>: Iterator<Item = T> + Clone
     where
         Self: 'a;
@@ -25,7 +25,7 @@ impl PItem for u8 {
     }
 }
 
-impl Parses<u8> for &str {
+impl ParsesT<u8> for &str {
     type Iter<'a>
         = Bytes<'a>
     where
@@ -48,7 +48,7 @@ impl PItem for (usize, char) {
     }
 }
 
-impl Parses<(usize, char)> for &str {
+impl ParsesT<(usize, char)> for &str {
     type Iter<'a>
         = CharIndices<'a>
     where

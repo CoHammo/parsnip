@@ -1,16 +1,17 @@
 pub mod compilers;
 mod events;
-mod iter;
 mod ops;
+mod peeks;
 mod scopes;
 mod stack;
 mod tests;
 mod threads;
 
+use super::types::iter::*;
 pub use compilers::*;
 use events::*;
-use iter::*;
 use ops::*;
+use peeks::*;
 use scopes::*;
 use stack::*;
 use threads::*;
@@ -26,9 +27,10 @@ pub enum Stat {
 pub struct Parser {
     stat: Stat,
     debug: bool,
-    seen: Vec<ThreadState>,
+    // seen: Vec<ThreadState>,
     ops: Ops,
     scopes: ScopeStack,
+    peeks: PeekStack,
     stack: Stack,
     threads: Threads,
     events: EventsBuilder,
@@ -41,9 +43,10 @@ impl Parser {
         let me = Self {
             stat: Stat::Running,
             debug: false,
-            seen: Vec::new(),
+            // seen: Vec::new(),
             ops: cops,
             scopes: ScopeStack::new(),
+            peeks: PeekStack::new(),
             threads: Threads::new(),
             stack: Stack::new(),
             events: EventsBuilder::new(),
@@ -57,29 +60,30 @@ impl Parser {
         // self.threads.debug = self.debug;
     }
 
-    fn seen(&mut self, id: u16, ip: u16) -> bool {
-        let state = self.threads[id].state(ip);
-        if self.seen.contains(&state) {
-            true
-        } else {
-            self.seen.push(state);
-            false
-        }
+    fn fork(&mut self, id: u16, ip: u16) -> (u16, &mut Thread) {
+        let (fork_id, fork) = self.threads.fork_thread(id);
+        fork.ip = ip;
+        self.peeks.upref(fork.peek);
+        self.scopes.upref(fork.scope);
+        self.stack.upref(fork.stack);
+        self.events.upref(fork.event);
+        (fork_id, fork)
     }
 
-    fn kill_thread(&mut self, id: u16, unref_events: bool) {
+    fn kill_thread(&mut self, id: u16, free_events: bool) {
         let thread = &mut self.threads[id];
         self.scopes.unref(thread.scope);
+        self.peeks.unref(thread.peek);
         self.stack.unref(thread.stack);
-        if unref_events {
+        if free_events {
             self.events.unref(thread.event);
         }
-        self.threads.kill(id);
+        self.threads.kill_thread(id);
         // println!("Killed Thread {}", id);
     }
 
-    pub fn parse<T: Parses, I: SnipIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {
-        let mut snips = source.snips(..);
+    pub fn parse<T: Parses, I: SnipsIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {
+        let mut snips = source.snips();
         while let Some(snip) = snips.next() {
             self.take_snip::<T, I>(&snip);
         }
@@ -97,13 +101,22 @@ impl Parser {
         }
     }
 
-    pub fn take_snip<T: Parses, I: SnipIter<T>>(&mut self, snip: &Snip<T>) {
+    pub fn take_snip<T: Parses, I: SnipsIter<T>>(&mut self, snip: &Snip<T, I>) {
         while let Some((id, mut ip)) = self.threads.next_thread()
             && self.stat == Stat::Running
         {
-            if !self.scopes[self.threads[id].scope].alive {
+            let th = &mut self.threads[id];
+            let peek = &mut self.peeks[th.peek];
+            if (th.scope != 0 && !self.scopes[th.scope].alive) || peek.stat == PeekStat::Kill {
                 self.kill_thread(id, true);
                 continue;
+            } else if peek.stat == PeekStat::Remove {
+                if th.peek % 2 == 0 {
+                    self.peeks.pop_peek(th.peek);
+                } else {
+                    self.kill_thread(id, true);
+                    continue;
+                }
             }
             loop {
                 if self.debug {
@@ -130,12 +143,9 @@ impl Parser {
                     MATCH => {
                         if let Some(value) = &snip.value {
                             let thread = &mut self.threads[id];
-                            let slice = self.ops.get_match_slice(ip);
-                            if value.matches(slice) {
+                            let slice = self.ops.get_match_args(ip);
+                            if value.is_match(slice) {
                                 ip += (slice.len() + 1) as u16;
-                                if self.seen(id, ip) {
-                                    self.kill_thread(id, true);
-                                }
                             } else if thread.saves > 0 {
                                 if self.debug {
                                     println!("    Rewinding...");
@@ -144,9 +154,6 @@ impl Parser {
                                 thread.rewind(&mut self.stack, &mut self.scopes);
                                 self.events.upref(thread.event);
                                 self.events.unref(event);
-                                if self.seen(id, ip) {
-                                    self.kill_thread(id, true);
-                                }
                             } else {
                                 self.kill_thread(id, true);
                             }
@@ -157,43 +164,20 @@ impl Parser {
                     }
                     MATCH_ANY => {
                         ip += 1;
-                        if self.seen(id, ip) {
-                            self.kill_thread(id, true);
-                        }
                         break;
                     }
                     JUMP => {
-                        let target = self.ops.get_jump_target(ip);
+                        let target = self.ops.get_jump_args(ip);
                         ip = target;
-                        if self.seen(id, ip) {
-                            self.kill_thread(id, true);
-                            break;
-                        }
                     }
                     BRANCH => {
-                        let (target1, target2) = self.ops.get_branch_targets(ip);
+                        let (target1, target2) = self.ops.get_branch_args(ip);
                         ip = target1;
-                        let mut killed = (false, false);
-                        if self.seen(id, ip) {
-                            self.kill_thread(id, true);
-                            killed.0 = true;
-                        }
-                        if self.seen(id, target2) {
-                            killed.1 = true;
-                        } else {
-                            let fork = self.threads.fork_thread(id);
-                            fork.ip = target2;
-                            self.scopes.upref(fork.scope);
-                            self.stack.upref(fork.stack);
-                            self.events.upref(fork.event);
-                        }
-                        if killed.0 && killed.1 {
-                            break;
-                        }
+                        self.fork(id, target2);
                     }
                     SCOPE => {
                         let thread = &mut self.threads[id];
-                        thread.scope = self.scopes.get_next_scope(thread.scope);
+                        thread.scope = self.scopes.add_scope(thread.scope);
                         ip += 1;
                     }
                     COMMIT_SCOPE => {
@@ -213,12 +197,25 @@ impl Parser {
                         self.kill_thread(id, true);
                         break;
                     }
+                    PEEK => {
+                        let thread = &mut self.threads[id];
+                        let (positive, target) = self.ops.get_peek_args(ip);
+                        thread.peek = self.peeks.add_peek(thread.peek, positive);
+                        let (_, fork) = self.fork(id, ip + 1);
+                        fork.peek += 1;
+                        ip = target;
+                    }
+                    COMMIT_PEEK => {
+                        self.peeks.commit_peek(self.threads[id].peek);
+                        self.kill_thread(id, true);
+                    }
                     SAVE => {
                         ip += 1;
                         let thread = &mut self.threads[id];
-                        thread.stack = self
-                            .stack
-                            .push_stack(Var::save(ip, thread.event, thread.scope), thread.stack);
+                        thread.stack = self.stack.push_stack(
+                            Var::save(ip, thread.event, thread.scope, thread.peek),
+                            thread.stack,
+                        );
                         thread.saves += 1;
                     }
                     UNSAVE => {
@@ -256,22 +253,18 @@ impl Parser {
                         {
                             thread.stack = new_stack_id;
                             loo.count += 1;
-                            let (start, min, max) = self.ops.get_loop_bounds(ip);
+                            let (start, min, max) = self.ops.get_loop_args(ip);
                             if loo.count == max {
                                 thread.stack = self.stack.pop_stack(thread.stack).unwrap().0;
                                 ip += 11;
                             } else {
                                 if loo.count >= min {
-                                    let fork = self.threads.fork_thread(id);
+                                    let (_, fork) = self.threads.fork_thread(id);
                                     fork.ip = ip + 11;
                                     fork.stack = self.stack.before(fork.stack);
                                     self.scopes.upref(fork.scope);
                                     self.stack.upref(fork.stack);
                                     self.events.upref(fork.event);
-                                }
-                                if self.seen(id, ip) {
-                                    self.kill_thread(id, true);
-                                    break;
                                 }
                                 ip = start;
                             }
@@ -292,7 +285,7 @@ impl Parser {
             self.threads[id].ip = ip;
         } // Threads Loop
 
-        self.seen.clear();
+        // self.seen.clear();
         if !self.threads.restart() {
             self.stat = match self.best_match {
                 Some(_) => Stat::Matched,

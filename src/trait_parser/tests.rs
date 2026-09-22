@@ -16,7 +16,7 @@ fn test_traits() {
         1,
         0,
     ));
-    let source = "Hello Man\n".repeat(1000000);
+    let source = "Hello Man\n".repeat(2700000);
 
     let start = Instant::now();
     let res = parser.parse(&source.as_str());

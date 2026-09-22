@@ -1,29 +1,11 @@
-use crate::vm_parser::scopes::ScopeStack;
-
-use super::{Stack, Var};
+use super::{ScopeStack, Stack, Var};
 use std::ops::{Index, IndexMut};
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
-pub struct ThreadState {
-    ip: u16,
-    scope: u16,
-    stack: u16,
-}
-
-impl Default for ThreadState {
-    fn default() -> Self {
-        ThreadState {
-            ip: 0,
-            scope: 0,
-            stack: 0,
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Thread {
     pub ip: u16,
     pub scope: u16,
+    pub peek: u16,
     pub stack: u16,
     pub saves: u16,
     pub event: u32,
@@ -36,6 +18,7 @@ impl Thread {
         Self {
             ip: 0,
             scope: 0,
+            peek: 0,
             stack: 0,
             saves: 0,
             event: 0,
@@ -44,18 +27,25 @@ impl Thread {
         }
     }
 
-    pub fn state(&self, ip: u16) -> ThreadState {
-        let state = ThreadState {
-            ip,
-            scope: self.scope,
-            stack: self.stack,
-        };
-        state
+    pub fn copy(&mut self, other: &mut Thread) {
+        self.ip = other.ip;
+        self.scope = other.scope;
+        self.peek = other.peek;
+        self.stack = other.stack;
+        self.saves = 0;
+        self.event = other.event;
+        self.next = 0;
     }
 
     pub fn rewind(&mut self, state: &mut Stack, scopes: &mut ScopeStack) {
         while let Some(st) = state.last(self.stack) {
-            if let &Var::Save { ip, event, scope } = st {
+            if let &Var::Save {
+                ip,
+                event,
+                scope,
+                peek,
+            } = st
+            {
                 self.ip = ip;
                 while self.scope != scope {
                     self.scope = scopes.pop_scope(self.scope).unwrap();
@@ -132,19 +122,13 @@ impl Threads {
         }
     }
 
-    pub fn fork_thread(&mut self, id: u16) -> &mut Thread {
+    pub fn fork_thread(&mut self, id: u16) -> (u16, &mut Thread) {
         let fork_id = self.allocate();
         let [orig, fork] = unsafe {
             self.pool
                 .get_disjoint_unchecked_mut([id as usize, fork_id as usize])
         };
-        fork.ip = orig.ip;
-        fork.scope = orig.scope;
-        fork.stack = orig.stack;
-        fork.saves = 0;
-        fork.event = orig.event;
-
-        fork.next = 0;
+        fork.copy(orig);
         if self.first == 0 {
             self.first = fork_id;
         }
@@ -157,10 +141,10 @@ impl Threads {
             self[last].next = fork_id;
         }
         self.last = fork_id;
-        &mut self[fork_id]
+        (fork_id, &mut self[fork_id])
     }
 
-    pub fn kill(&mut self, id: u16) {
+    pub fn kill_thread(&mut self, id: u16) {
         let prev = self[id].prev;
         let next = self[id].next;
 

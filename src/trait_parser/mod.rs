@@ -8,7 +8,7 @@ use std::str::Bytes;
 pub enum Stat {
     Running,
     // HasMatch(usize),
-    Matched(usize),
+    Matched(u32),
     Failed,
 }
 
@@ -24,7 +24,7 @@ impl Matches for u8 {
 
 pub struct Snip<'a, T: Matches> {
     pub value: T,
-    pub index: usize,
+    pub index: u32,
     iter: &'a dyn Snipper<T>,
 }
 
@@ -38,7 +38,7 @@ pub trait ParseAs<T: Matches> {
     type Iter<'a>: Iterator<Item = T>
     where
         Self: 'a;
-    fn snips(&self, range: impl RangeBounds<usize>) -> impl Snipper<T>;
+    fn snips(&self, range: impl RangeBounds<u32>) -> impl Snipper<T>;
     fn snip_store(self) -> Box<[T]>;
 }
 
@@ -47,8 +47,8 @@ impl ParseAs<u8> for &str {
         = Bytes<'a>
     where
         Self: 'a;
-    fn snips(&self, range: impl RangeBounds<usize>) -> impl Snipper<u8> {
-        Snips::new(self.bytes(), self.len(), range)
+    fn snips(&self, range: impl RangeBounds<u32>) -> impl Snipper<u8> {
+        Snips::new(self.bytes(), self.len() as u32, range)
     }
 
     fn snip_store(self) -> Box<[u8]> {
@@ -65,14 +65,14 @@ pub trait Snipper<T: Matches> {
 
 pub struct Snips<T: Default, I: Iterator<Item = T>> {
     repeat: bool,
-    index: usize,
-    end: usize,
+    index: u32,
+    end: u32,
     item: T,
     iter: I,
 }
 
 impl<'a, T: Default, I: Iterator<Item = T>> Snips<T, I> {
-    pub fn new(mut iter: I, source_len: usize, range: impl RangeBounds<usize>) -> Self {
+    pub fn new(mut iter: I, source_len: u32, range: impl RangeBounds<u32>) -> Self {
         let start = match range.start_bound() {
             Included(start) => *start,
             Excluded(start) => *start + 1,
@@ -160,7 +160,7 @@ pub struct Parser<T: Matches> {
 impl<T: Matches> Parser<T> {
     pub fn new(parser: impl ParserT<T> + 'static) -> Self {
         Self {
-            events: Vec::with_capacity(16),
+            events: vec![Event::close(0, 0)],
             inner: Box::new(parser),
         }
     }
@@ -168,7 +168,7 @@ impl<T: Matches> Parser<T> {
     pub fn parse(&mut self, source: &impl ParseAs<T>) -> Stat {
         let mut iter = source.snips(..);
         while let Some(item) = iter.next() {
-            match self.inner.snip(&mut self.events, None, &item) {
+            match self.inner.snip(&mut self.events, 0, &item) {
                 Stat::Running => {}
                 _ => break,
             }
@@ -190,12 +190,12 @@ pub struct Token {
 #[derive(Debug, Clone, Copy)]
 pub struct Event {
     pub opens: bool,
-    pub index: usize,
-    pub prev: Option<usize>,
+    pub index: u32,
+    pub prev: u32,
 }
 
 impl Event {
-    pub fn open(index: usize, prev: Option<usize>) -> Self {
+    pub fn open(index: u32, prev: u32) -> Self {
         Self {
             opens: true,
             index,
@@ -203,7 +203,7 @@ impl Event {
         }
     }
 
-    pub fn close(index: usize, prev: Option<usize>) -> Self {
+    pub fn close(index: u32, prev: u32) -> Self {
         Self {
             opens: false,
             index,
@@ -216,8 +216,8 @@ impl Event {
 pub struct Base {
     pub stat: Stat,
     pub fresh: bool,
-    pub start: usize,
-    pub prev_event: Option<usize>,
+    pub start: u32,
+    pub prev_event: u32,
 }
 impl Base {
     pub fn new() -> Self {
@@ -225,7 +225,7 @@ impl Base {
             stat: Stat::Running,
             fresh: true,
             start: 0,
-            prev_event: None,
+            prev_event: 0,
         }
     }
 
@@ -233,13 +233,13 @@ impl Base {
         self.stat = Stat::Running;
         self.fresh = true;
         self.start = 0;
-        self.prev_event = None;
+        self.prev_event = 0;
     }
 }
 
 pub trait ParserT<T: Matches> {
     fn base(&mut self) -> &mut Base;
-    fn snip(&mut self, events: &mut Vec<Event>, prev_event: Option<usize>, item: &Snip<T>) -> Stat;
+    fn snip(&mut self, events: &mut Vec<Event>, prev_event: u32, item: &Snip<T>) -> Stat;
     fn finish(&mut self, events: &mut Vec<Event>, item: &Snip<T>) -> Stat;
     fn reset(&mut self);
     fn string(&self) -> String;
@@ -251,13 +251,13 @@ pub trait ParserT<T: Matches> {
 pub struct Str<T: Matches> {
     pub base: Base,
     items: Box<[T]>,
-    len: usize,
-    index: usize,
+    len: u16,
+    index: u16,
 }
 impl<T: Matches> Str<T> {
     pub fn new(value: impl ParseAs<T>) -> Self {
         let items = value.snip_store();
-        let len = items.len();
+        let len = items.len() as u16;
         Self {
             base: Base::new(),
             items,
@@ -272,14 +272,14 @@ impl<T: Matches + 'static> ParserT<T> for Str<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, _: &mut Vec<Event>, _: Option<usize>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, _: &mut Vec<Event>, _: u32, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
             self.base.fresh = false;
         }
         if self.len == 0 {
             self.base.stat = Stat::Failed;
-        } else if item.value.matches(&self.items[self.index]) {
+        } else if item.value.matches(&self.items[self.index as usize]) {
             self.index += 1;
             if self.index == self.len {
                 self.base.stat = Stat::Matched(item.index + 1);
@@ -353,11 +353,11 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, prev_event: Option<usize>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, events: &mut Vec<Event>, prev_event: u32, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
-            self.base.prev_event = Some(events.len());
-            events.push(Event::open(item.index, prev_event));
+            self.base.prev_event = events.len() as u32;
+            events.push(Event::open(item.index as u32, prev_event));
             self.base.fresh = false;
         }
         match self.inner.snip(events, self.base.prev_event, item) {
@@ -366,11 +366,11 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
                 events.push(Event::close(
                     end,
                     match self.inner.base().prev_event {
-                        Some(prev) => Some(prev),
-                        None => self.base.prev_event,
+                        0 => self.base.prev_event,
+                        prev => prev,
                     },
                 ));
-                self.base.prev_event = Some(events.len() - 1);
+                self.base.prev_event = events.len() as u32 - 1;
                 self.base.stat = Stat::Matched(end);
             }
             Stat::Failed => self.base.stat = Stat::Failed,
@@ -382,7 +382,7 @@ impl<T: Matches + 'static> ParserT<T> for Tok<T> {
         match self.inner.finish(events, item) {
             Stat::Matched(end) => {
                 events.push(Event::close(end, self.base.prev_event));
-                self.base.prev_event = Some(events.len() - 1);
+                self.base.prev_event = events.len() as u32 - 1;
                 self.base.stat = Stat::Matched(end);
             }
             _ => self.base.stat = Stat::Failed,
@@ -415,13 +415,13 @@ pub fn tok<T: Matches>(parser: impl ParserT<T> + 'static, tag: Tag) -> Tok<T> {
 pub struct Chain<T: Matches> {
     pub base: Base,
     inners: Box<[Box<dyn ParserT<T>>]>,
-    len: usize,
-    index: usize,
-    check_at_index: usize,
+    len: u16,
+    index: u16,
+    check_at_index: u32,
 }
 impl<T: Matches> Chain<T> {
     pub fn new(parsers: Box<[Box<dyn ParserT<T>>]>) -> Self {
-        let len = parsers.len();
+        let len = parsers.len() as u16;
         Self {
             base: Base::new(),
             inners: parsers,
@@ -449,23 +449,23 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, prev_event: Option<usize>, snip: &Snip<T>) -> Stat {
+    fn snip(&mut self, events: &mut Vec<Event>, prev_event: u32, snip: &Snip<T>) -> Stat {
         if snip.index >= self.check_at_index {
             if self.base.fresh {
                 self.base.start = snip.index;
                 self.base.prev_event = prev_event;
                 self.base.fresh = false;
             }
-            let inner = &mut self.inners[self.index];
+            let inner = &mut self.inners[self.index as usize];
             match inner.snip(events, self.base.prev_event, snip) {
                 Stat::Running => {
-                    if let Some(inner_prev) = inner.base().prev_event {
-                        self.base.prev_event = Some(inner_prev);
+                    if inner.base().prev_event != 0 {
+                        self.base.prev_event = inner.base().prev_event;
                     }
                 }
                 Stat::Matched(end) => {
-                    if let Some(inner_prev) = inner.base().prev_event {
-                        self.base.prev_event = Some(inner_prev);
+                    if inner.base().prev_event != 0 {
+                        self.base.prev_event = inner.base().prev_event;
                     }
                     self.index += 1;
                     if self.index == self.len {
@@ -485,11 +485,11 @@ impl<T: Matches + 'static> ParserT<T> for Chain<T> {
     }
 
     fn finish(&mut self, events: &mut Vec<Event>, snip: &Snip<T>) -> Stat {
-        let inner = &mut self.inners[self.index];
+        let inner = &mut self.inners[self.index as usize];
         match inner.finish(events, snip) {
             Stat::Matched(end) => {
-                if let Some(inner_prev) = inner.base().prev_event {
-                    self.base.prev_event = Some(inner_prev);
+                if inner.base().prev_event != 0 {
+                    self.base.prev_event = inner.base().prev_event;
                 }
                 self.index += 1;
                 if self.index == self.len {
@@ -554,13 +554,13 @@ pub fn chain<T: Matches>(parsers: &[&dyn ParserT<T>]) -> Chain<T> {
 pub struct Rep<T: Matches> {
     pub base: Base,
     inner: Box<dyn ParserT<T>>,
-    min: usize,
-    max: usize,
-    count: usize,
-    end: usize,
+    min: u32,
+    max: u32,
+    count: u32,
+    end: u32,
 }
 impl<T: Matches> Rep<T> {
-    pub fn new(parser: impl ParserT<T> + 'static, mut min: usize, mut max: usize) -> Self {
+    pub fn new(parser: impl ParserT<T> + 'static, mut min: u32, mut max: u32) -> Self {
         min = match min {
             0 => 1,
             m => m,
@@ -578,18 +578,18 @@ impl<T: Matches> Rep<T> {
         }
     }
 
-    fn lookahead(&mut self, events: &mut Vec<Event>, prev_event: Option<usize>, item: &Snip<T>) {
+    fn lookahead(&mut self, events: &mut Vec<Event>, prev_event: u32, item: &Snip<T>) {
         let mut iter = item.peeks();
         while let Some(snip) = iter.next() {
             match self.inner.snip(events, self.base.prev_event, &snip) {
                 Stat::Running => {
-                    if let Some(inner_prev) = self.inner.base().prev_event {
-                        self.base.prev_event = Some(inner_prev);
+                    if self.inner.base().prev_event != 0 {
+                        self.base.prev_event = self.inner.base().prev_event;
                     }
                 }
                 Stat::Matched(end) => {
-                    if let Some(inner_prev) = self.inner.base().prev_event {
-                        self.base.prev_event = Some(inner_prev);
+                    if self.inner.base().prev_event != 0 {
+                        self.base.prev_event = self.inner.base().prev_event;
                     }
                     self.count += 1;
                     self.end = end;
@@ -619,7 +619,7 @@ impl<T: Matches + 'static> ParserT<T> for Rep<T> {
         &mut self.base
     }
 
-    fn snip(&mut self, events: &mut Vec<Event>, prev_event: Option<usize>, item: &Snip<T>) -> Stat {
+    fn snip(&mut self, events: &mut Vec<Event>, prev_event: u32, item: &Snip<T>) -> Stat {
         if self.base.fresh {
             self.base.start = item.index;
             self.base.prev_event = prev_event;
@@ -664,6 +664,6 @@ impl<T: Matches + 'static> ParserT<T> for Rep<T> {
     }
 }
 
-pub fn rep<T: Matches>(parser: impl ParserT<T> + 'static, min: usize, max: usize) -> Rep<T> {
+pub fn rep<T: Matches>(parser: impl ParserT<T> + 'static, min: u32, max: u32) -> Rep<T> {
     Rep::new(parser, min, max)
 }
