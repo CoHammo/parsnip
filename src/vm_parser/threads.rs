@@ -1,4 +1,4 @@
-use super::{ScopeStack, Stack, Var};
+use super::{EventsBuilder, ScopeStack, Stack, Var};
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
@@ -7,7 +7,7 @@ pub struct Thread {
     pub scope: u16,
     pub peek: u16,
     pub stack: u16,
-    pub saves: u16,
+    pub saves: u8,
     pub event: u32,
     prev: u16,
     next: u16,
@@ -27,7 +27,7 @@ impl Thread {
         }
     }
 
-    pub fn copy(&mut self, other: &mut Thread) {
+    pub fn copy_from(&mut self, other: &mut Thread) {
         self.ip = other.ip;
         self.scope = other.scope;
         self.peek = other.peek;
@@ -37,21 +37,32 @@ impl Thread {
         self.next = 0;
     }
 
-    pub fn rewind(&mut self, state: &mut Stack, scopes: &mut ScopeStack) {
-        while let Some(st) = state.last(self.stack) {
+    pub fn rewind(
+        &mut self,
+        state: &mut Stack,
+        scopes: &mut ScopeStack,
+        events: &mut EventsBuilder,
+    ) {
+        while let Some(stack) = state.last(self.stack) {
             if let &Var::Save {
                 ip,
-                event,
                 scope,
                 peek,
-            } = st
+                event,
+            } = stack
             {
                 self.ip = ip;
                 while self.scope != scope {
                     self.scope = scopes.pop_scope(self.scope).unwrap();
                 }
-                self.scope = scope;
-                self.event = event;
+                if self.event != event {
+                    events.upref(event);
+                    self.event = event;
+                    events.unref(self.event);
+                }
+                // while self.peek != peek {
+                //     self.peek = peek;
+                // }
                 return;
             } else {
                 let (prev, _) = state.pop_stack(self.stack).unwrap();
@@ -128,7 +139,7 @@ impl Threads {
             self.pool
                 .get_disjoint_unchecked_mut([id as usize, fork_id as usize])
         };
-        fork.copy(orig);
+        fork.copy_from(orig);
         if self.first == 0 {
             self.first = fork_id;
         }

@@ -5,27 +5,27 @@ use std::time::Instant;
 fn test_vm() {
     // let mut parser = Parser::new(rep(run(vec![tok("Hello "), tok("Man\n")]), 1, 0));
     // let mut parser = Parser::new(rep(tok("Hello Man\n"), 1, 0));
-    // let mut parser = Parser::new(rep(tok(till2("\n")), 1, 0));
-    let mut parser = Parser::new(rep(
-        tok(alt(vec![
-            branch(
-                run(vec![
-                    tok(run(vec![rep("#", 1, 6), str(" ")])),
-                    commit(),
-                    tok(till("\n")),
-                ]),
-                true,
-            ),
-            branch(run(vec![tok("> "), commit(), tok(till("\n"))]), true),
-            branch(till("\n"), false),
-        ])),
-        1,
-        0,
-    ));
+    let mut parser = Parser::new(rep(tok(till("\n")), 1, 0));
+    // let mut parser = Parser::new(rep(
+    //     tok(alt(vec![
+    //         branch(
+    //             run(vec![
+    //                 tok(run(vec![rep("#", 1, 6), str(" ")])),
+    //                 commit(),
+    //                 tok(till("\n")),
+    //             ]),
+    //             true,
+    //         ),
+    //         branch(run(vec![tok("> "), commit(), tok(till("\n"))]), true),
+    //         branch(till("\n"), false),
+    //     ])),
+    //     1,
+    //     0,
+    // ));
     // let mut parser = Parser::new(run(vec![tok("foo"), not("bar")]));
 
-    let source = "# A Title\n> Quotes!\nHello Man\n".repeat(800000);
-    // let source = "Hello Man\n".repeat(5000000);
+    // let source = "# A Title\n> Quotes!\nHello Man\n".repeat(35);
+    let source = "Hello Man\n".repeat(5000000);
 
     // parser.debug();
     // println!("Program:\n{}", parser.ops.debug_str(true));

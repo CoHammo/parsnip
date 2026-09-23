@@ -5,9 +5,9 @@ pub enum Var {
     // Call(usize),
     Save {
         ip: u16,
-        event: u32,
         scope: u16,
         peek: u16,
+        event: u32,
     },
 }
 
@@ -19,9 +19,9 @@ impl Var {
     pub fn save(ip: u16, event: u32, scope: u16, peek: u16) -> Var {
         Var::Save {
             ip,
-            event,
             scope,
             peek,
+            event,
         }
     }
 }
@@ -106,7 +106,7 @@ impl Stack {
         }
     }
 
-    pub fn before(&self, id: u16) -> u16 {
+    pub fn prev(&self, id: u16) -> u16 {
         unsafe { self.stack.get_unchecked(id as usize).prev }
     }
 

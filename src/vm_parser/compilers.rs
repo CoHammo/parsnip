@@ -18,21 +18,9 @@ pub fn tok<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
     ops
 }
 
-// pub fn not<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-//     let mut ops = vec![Op::Scope];
-//     let inner = value.cops();
-//     let len = inner.len() + 2;
-//     ops.push(Op::Branch(Jmp::Up(len), Jmp::Up(1)));
-//     ops.extend(inner);
-//     ops.push(Op::KillScope);
-//     ops
-// }
-
 pub fn not<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
     let inner = value.ops();
     let mut ops = vec![Op::Peek(false, inner.len() + 2)];
-    // ops.push(Op::Branch(Jmp::Up(inner.len() + 3), Jmp::Up(1)));
-    // ops.push(Op::Scope(ScopeKind::NegativeLookahead));
     ops.extend(inner);
     ops.push(Op::CommitPeek);
     ops

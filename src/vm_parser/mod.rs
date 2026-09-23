@@ -27,7 +27,6 @@ pub enum Stat {
 pub struct Parser {
     stat: Stat,
     debug: bool,
-    // seen: Vec<ThreadState>,
     ops: Ops,
     scopes: ScopeStack,
     peeks: PeekStack,
@@ -43,7 +42,6 @@ impl Parser {
         let me = Self {
             stat: Stat::Running,
             debug: false,
-            // seen: Vec::new(),
             ops: cops,
             scopes: ScopeStack::new(),
             peeks: PeekStack::new(),
@@ -153,14 +151,11 @@ impl Parser {
                     MATCH => {
                         let thread = &mut self.threads[id];
                         if let Some(value) = &snip.value {
-                            let slice = self.ops.get_match_args(ip);
-                            if value.is_match(slice) {
-                                ip += (slice.len() + 1) as u16;
+                            let args = self.ops.get_match_args(ip);
+                            if value.is_match(args.slice) {
+                                ip += args.size();
                             } else if thread.saves > 0 {
-                                let event = thread.event;
-                                thread.rewind(&mut self.stack, &mut self.scopes);
-                                self.events.upref(thread.event);
-                                self.events.unref(event);
+                                thread.rewind(&mut self.stack, &mut self.scopes, &mut self.events);
                             } else {
                                 self.kill_thread(id, true);
                             }
@@ -177,13 +172,13 @@ impl Parser {
                         break;
                     }
                     JUMP => {
-                        let target = self.ops.get_jump_args(ip);
-                        ip = target;
+                        let args = self.ops.get_jump_args(ip);
+                        ip = args.target;
                     }
                     BRANCH => {
-                        let (target1, target2) = self.ops.get_branch_args(ip);
-                        ip = target1;
-                        self.fork(id, target2, true);
+                        let args = self.ops.get_branch_args(ip);
+                        ip = args.t1;
+                        self.fork(id, args.t2, true);
                     }
                     SCOPE => {
                         let thread = &mut self.threads[id];
@@ -209,11 +204,11 @@ impl Parser {
                     }
                     PEEK => {
                         let thread = &mut self.threads[id];
-                        let (positive, target) = self.ops.get_peek_args(ip);
-                        thread.peek = self.peeks.add_peek(thread.peek, positive);
-                        let (_, fork) = self.fork(id, ip + 4, false);
+                        let args = self.ops.get_peek_args(ip);
+                        thread.peek = self.peeks.add_peek(thread.peek, args.positive);
+                        let (_, fork) = self.fork(id, ip + args.size(), false);
                         fork.peek += 1;
-                        ip = target;
+                        ip = args.target;
                     }
                     COMMIT_PEEK => {
                         self.peeks.commit_peek(self.threads[id].peek);
@@ -264,20 +259,20 @@ impl Parser {
                         {
                             thread.stack = new_stack_id;
                             loo.count += 1;
-                            let (start, min, max) = self.ops.get_loop_args(ip);
-                            if loo.count == max {
+                            let args = self.ops.get_loop_args(ip);
+                            if loo.count == args.max {
                                 thread.stack = self.stack.pop_stack(thread.stack).unwrap().0;
-                                ip += 11;
+                                ip += args.size();
                             } else {
-                                if loo.count >= min {
+                                if loo.count >= args.min {
                                     let (_, fork) = self.threads.fork_thread(id);
-                                    fork.ip = ip + 11;
-                                    fork.stack = self.stack.before(fork.stack);
+                                    fork.ip = ip + args.size();
+                                    fork.stack = self.stack.prev(fork.stack);
                                     self.scopes.upref(fork.scope);
                                     self.stack.upref(fork.stack);
                                     self.events.upref(fork.event);
                                 }
-                                ip = start;
+                                ip = args.start_ip;
                             }
                         } else {
                             println!("Tried to close a loop with no start");

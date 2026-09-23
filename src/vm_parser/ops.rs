@@ -65,6 +65,55 @@ pub enum Op<T: Parses> {
     EndLoop(usize, u32, u32),
 }
 
+pub struct MatchArgs<'a> {
+    pub slice: &'a [u8],
+}
+impl<'a> MatchArgs<'a> {
+    pub fn size(&self) -> u16 {
+        (self.slice.len() + 1) as u16
+    }
+}
+
+pub struct JumpArgs {
+    pub target: u16,
+}
+impl JumpArgs {
+    pub fn size(&self) -> u16 {
+        3
+    }
+}
+
+pub struct BranchArgs {
+    pub t1: u16,
+    pub t2: u16,
+}
+impl BranchArgs {
+    pub fn size(&self) -> u16 {
+        5
+    }
+}
+
+pub struct PeekArgs {
+    pub positive: bool,
+    pub target: u16,
+}
+impl PeekArgs {
+    pub fn size(&self) -> u16 {
+        4
+    }
+}
+
+pub struct LoopArgs {
+    pub start_ip: u16,
+    pub min: u32,
+    pub max: u32,
+}
+impl LoopArgs {
+    pub fn size(&self) -> u16 {
+        11
+    }
+}
+
 impl<T: Parses> Op<T> {
     pub fn byte(&self) -> u8 {
         match self {
@@ -172,33 +221,34 @@ impl Ops {
     //     self.bytes_len
     // }
 
-    pub fn get_match_args(&self, index: u16) -> &[u8] {
-        unsafe {
+    pub fn get_match_args(&self, index: u16) -> MatchArgs<'_> {
+        let slice = unsafe {
             &self.ops.get_unchecked(
                 (index + 1) as usize..((index + 1 + self.value_size as u16) as usize),
             )
-        }
+        };
+        MatchArgs { slice }
     }
 
-    pub fn get_jump_args(&self, index: u16) -> u16 {
-        let ip = u16::from_be_bytes([self[index + 1], self[index + 2]]);
-        ip
+    pub fn get_jump_args(&self, index: u16) -> JumpArgs {
+        let target = u16::from_be_bytes([self[index + 1], self[index + 2]]);
+        JumpArgs { target }
     }
 
-    pub fn get_peek_args(&self, index: u16) -> (bool, u16) {
+    pub fn get_peek_args(&self, index: u16) -> PeekArgs {
         let positive = self[index + 1] != 0;
         let target = u16::from_be_bytes([self[index + 2], self[index + 3]]);
-        (positive, target)
+        PeekArgs { positive, target }
     }
 
-    pub fn get_branch_args(&self, index: u16) -> (u16, u16) {
-        let target1 = u16::from_be_bytes([self[index + 1], self[index + 2]]);
-        let target2 = u16::from_be_bytes([self[index + 3], self[index + 4]]);
-        (target1, target2)
+    pub fn get_branch_args(&self, index: u16) -> BranchArgs {
+        let t1 = u16::from_be_bytes([self[index + 1], self[index + 2]]);
+        let t2 = u16::from_be_bytes([self[index + 3], self[index + 4]]);
+        BranchArgs { t1, t2 }
     }
 
-    pub fn get_loop_args(&self, index: u16) -> (u16, u32, u32) {
-        let start_target = u16::from_be_bytes([self[index + 1], self[index + 2]]);
+    pub fn get_loop_args(&self, index: u16) -> LoopArgs {
+        let start_ip = u16::from_be_bytes([self[index + 1], self[index + 2]]);
         let min = u32::from_be_bytes([
             self[index + 3],
             self[index + 4],
@@ -211,39 +261,47 @@ impl Ops {
             self[index + 9],
             self[index + 10],
         ]);
-        (start_target, min, max)
+        LoopArgs { start_ip, min, max }
     }
 
-    pub fn get_info_at(&self, index: u16) -> (u8, String, u8) {
+    pub fn get_info_at(&self, index: u16) -> (u8, String, u16) {
         match self[index] {
             MATCHED => (MATCHED, format!("{}:Matched", index), 1),
             MATCH => {
-                let slice = self.get_match_args(index);
+                let args = self.get_match_args(index);
                 (
                     MATCH,
-                    format!("{}:Match({:?})", index, slice),
-                    (slice.len() + 1) as u8,
+                    format!("{}:Match({:?})", index, args.slice),
+                    args.size(),
                 )
             }
             MATCH_ANY => (MATCH_ANY, format!("{}:MatchAny", index), 1),
             JUMP => {
-                let target = self.get_jump_args(index);
-                (JUMP, format!("{}:Jump({})", index, target), 3)
+                let args = self.get_jump_args(index);
+                (
+                    JUMP,
+                    format!("{}:Jump({})", index, args.target),
+                    args.size(),
+                )
             }
             BRANCH => {
-                let (target1, target2) = self.get_branch_args(index);
+                let args = self.get_branch_args(index);
                 (
                     BRANCH,
-                    format!("{}:Branch({}, {})", index, target1, target2),
-                    5,
+                    format!("{}:Branch({}, {})", index, args.t1, args.t2),
+                    args.size(),
                 )
             }
             SCOPE => (SCOPE, format!("{}:Scope", index), 1),
             COMMIT_SCOPE => (COMMIT_SCOPE, format!("{}:CommitScope", index), 1),
             KILL_SCOPE => (KILL_SCOPE, format!("{}:KillScope", index), 1),
             PEEK => {
-                let (positive, target) = self.get_peek_args(index);
-                (PEEK, format!("{}:Peek({}, {})", index, positive, target), 4)
+                let args = self.get_peek_args(index);
+                (
+                    PEEK,
+                    format!("{}:Peek({}, {})", index, args.positive, args.target),
+                    args.size(),
+                )
             }
             COMMIT_PEEK => (COMMIT_PEEK, format!("{}:CommitPeek", index), 1),
             START_TOK => (START_TOK, format!("{}:StartTok", index), 1),
@@ -252,11 +310,14 @@ impl Ops {
             UNSAVE => (UNSAVE, format!("{}:Unsave", index), 1),
             START_LOOP => (START_LOOP, format!("{}:StartLoop", index), 1),
             END_LOOP => {
-                let (start, min, max) = self.get_loop_args(index);
+                let args = self.get_loop_args(index);
                 (
                     END_LOOP,
-                    format!("{}:EndLoop({}, {}, {})", index, start, min, max),
-                    11,
+                    format!(
+                        "{}:EndLoop({}, {}, {})",
+                        index, args.start_ip, args.min, args.max
+                    ),
+                    args.size(),
                 )
             }
             op => {
