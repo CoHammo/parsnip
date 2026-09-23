@@ -62,8 +62,8 @@ impl Thread {
 
     pub fn dbg(&self) -> String {
         format!(
-            "Thread(ip={:?}, saves={}, event={:?})",
-            self.ip, self.saves, self.event
+            "Thread(ip={}, scope={}, peek={}, stack={}, saves={}, event={})",
+            self.ip, self.scope, self.peek, self.stack, self.saves, self.event
         )
     }
 }

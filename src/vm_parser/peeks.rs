@@ -84,8 +84,27 @@ impl PeekStack {
         }
     }
 
-    pub fn pop_peek(&mut self, id: u16) {
-        if id != 0 {}
+    pub fn pop_peek(&mut self, mut id: u16) -> u16 {
+        let mut free = true;
+        while id != 0 && self[id].stat == PeekStat::Remove {
+            let peek = &mut self[id];
+            let parent = peek.parent;
+            if peek.refs == 1 {
+                if free {
+                    peek.refs = 0;
+                    if peek.peek_refs == 0 {
+                        self.free(id);
+                    }
+                }
+            } else {
+                free = false;
+            }
+            id = parent;
+        }
+        if id != 0 {
+            self[id].refs += 1;
+        }
+        id
     }
 
     pub fn upref(&mut self, id: u16) {

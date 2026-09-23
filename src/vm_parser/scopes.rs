@@ -74,7 +74,9 @@ impl ScopeStack {
             if self[id].refs == 0 {
                 self.free(id);
             } else {
-                self[parent].refs += 1;
+                if parent != 0 {
+                    self[parent].refs += 1;
+                }
             }
             Some(parent)
         } else {
@@ -93,7 +95,9 @@ impl ScopeStack {
             self[id].refs = 0;
             id = self.free(id);
         }
-        self[id].refs -= 1;
+        if id != 0 {
+            self[id].refs -= 1;
+        }
     }
 
     fn free(&mut self, id: u16) -> u16 {

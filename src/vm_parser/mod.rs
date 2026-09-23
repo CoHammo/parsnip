@@ -60,10 +60,12 @@ impl Parser {
         // self.threads.debug = self.debug;
     }
 
-    fn fork(&mut self, id: u16, ip: u16) -> (u16, &mut Thread) {
+    fn fork(&mut self, id: u16, ip: u16, upref_peeks: bool) -> (u16, &mut Thread) {
         let (fork_id, fork) = self.threads.fork_thread(id);
         fork.ip = ip;
-        self.peeks.upref(fork.peek);
+        if upref_peeks {
+            self.peeks.upref(fork.peek);
+        }
         self.scopes.upref(fork.scope);
         self.stack.upref(fork.stack);
         self.events.upref(fork.event);
@@ -82,7 +84,10 @@ impl Parser {
         // println!("Killed Thread {}", id);
     }
 
-    pub fn parse<T: Parses, I: SnipsIter<T>>(&mut self, source: impl AsSnips<T, I>) -> Events {
+    pub fn parse<T: Parses, I: Iterator<Item = T> + Clone>(
+        &mut self,
+        source: impl AsSnips<T, I>,
+    ) -> Events {
         let mut snips = source.snips();
         while let Some(snip) = snips.next() {
             self.take_snip::<T, I>(&snip);
@@ -101,55 +106,57 @@ impl Parser {
         }
     }
 
-    pub fn take_snip<T: Parses, I: SnipsIter<T>>(&mut self, snip: &Snip<T, I>) {
+    pub fn take_snip<T: Parses, I: Iterator<Item = T> + Clone>(&mut self, snip: &Snip<T, I>) {
         while let Some((id, mut ip)) = self.threads.next_thread()
             && self.stat == Stat::Running
         {
             let th = &mut self.threads[id];
             let peek = &mut self.peeks[th.peek];
-            if (th.scope != 0 && !self.scopes[th.scope].alive) || peek.stat == PeekStat::Kill {
+            if (th.scope != 0 && !self.scopes[th.scope].alive)
+                || (th.peek != 0 && peek.stat == PeekStat::Kill)
+            {
                 self.kill_thread(id, true);
                 continue;
-            } else if peek.stat == PeekStat::Remove {
+            } else if th.peek != 0 && peek.stat == PeekStat::Remove {
                 if th.peek % 2 == 0 {
-                    self.peeks.pop_peek(th.peek);
+                    th.peek = self.peeks.pop_peek(th.peek);
                 } else {
                     self.kill_thread(id, true);
                     continue;
                 }
             }
             loop {
-                if self.debug {
-                    println!(
-                        "Thread {}: snipdex={}, snip={:?}, op={}",
-                        id,
-                        snip.index,
-                        snip.value,
-                        self.ops.get_info_at(ip).1
-                    );
-                }
+                // if self.debug {
+                //     println!(
+                //         "Thread {}: snipdex={}, snip={:?}, op={}",
+                //         id,
+                //         snip.index,
+                //         snip.value,
+                //         self.ops.get_info_at(ip).1
+                //     );
+                //     println!("    {}", self.threads[id].dbg());
+                // }
                 match self.ops[ip] {
                     MATCHED => {
                         let thread = &mut self.threads[id];
-                        if let Some(best) = self.best_match
-                            && best != 0
-                        {
-                            self.events.unref(best);
+                        if thread.peek == 0 {
+                            if let Some(best) = self.best_match
+                                && best != 0
+                            {
+                                self.events.unref(best);
+                            }
+                            self.best_match = Some(thread.event);
+                            self.kill_thread(id, false);
                         }
-                        self.best_match = Some(thread.event);
-                        self.kill_thread(id, false);
                         break;
                     }
                     MATCH => {
+                        let thread = &mut self.threads[id];
                         if let Some(value) = &snip.value {
-                            let thread = &mut self.threads[id];
                             let slice = self.ops.get_match_args(ip);
                             if value.is_match(slice) {
                                 ip += (slice.len() + 1) as u16;
                             } else if thread.saves > 0 {
-                                if self.debug {
-                                    println!("    Rewinding...");
-                                }
                                 let event = thread.event;
                                 thread.rewind(&mut self.stack, &mut self.scopes);
                                 self.events.upref(thread.event);
@@ -159,6 +166,9 @@ impl Parser {
                             }
                         } else {
                             self.kill_thread(id, true);
+                            if self.threads[id].peek % 2 != 0 {
+                                self.threads.restart();
+                            }
                         }
                         break;
                     }
@@ -173,7 +183,7 @@ impl Parser {
                     BRANCH => {
                         let (target1, target2) = self.ops.get_branch_args(ip);
                         ip = target1;
-                        self.fork(id, target2);
+                        self.fork(id, target2, true);
                     }
                     SCOPE => {
                         let thread = &mut self.threads[id];
@@ -182,9 +192,9 @@ impl Parser {
                     }
                     COMMIT_SCOPE => {
                         let thread = &mut self.threads[id];
-                        if let Some(prev_scope) = self.scopes.pop_scope(thread.scope) {
+                        if let Some(prev) = self.scopes.pop_scope(thread.scope) {
                             self.scopes.kill_scope(thread.scope);
-                            thread.scope = prev_scope;
+                            thread.scope = prev;
                             ip += 1;
                         } else {
                             println!("Tried to commit a scope that doesn't exist");
@@ -201,13 +211,14 @@ impl Parser {
                         let thread = &mut self.threads[id];
                         let (positive, target) = self.ops.get_peek_args(ip);
                         thread.peek = self.peeks.add_peek(thread.peek, positive);
-                        let (_, fork) = self.fork(id, ip + 1);
+                        let (_, fork) = self.fork(id, ip + 4, false);
                         fork.peek += 1;
                         ip = target;
                     }
                     COMMIT_PEEK => {
                         self.peeks.commit_peek(self.threads[id].peek);
                         self.kill_thread(id, true);
+                        break;
                     }
                     SAVE => {
                         ip += 1;
@@ -276,16 +287,13 @@ impl Parser {
                     }
                     op => {
                         panic!("Bad Op!! {}", op);
+                        // break;
                     }
-                }
-                if self.debug {
-                    println!("    {}", self.threads[id].dbg());
                 }
             } // Command Loop
             self.threads[id].ip = ip;
         } // Threads Loop
 
-        // self.seen.clear();
         if !self.threads.restart() {
             self.stat = match self.best_match {
                 Some(_) => Stat::Matched,

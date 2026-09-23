@@ -97,7 +97,8 @@ pub struct Ops {
 }
 
 impl Ops {
-    pub fn new<T: Parses>(ir: Vec<Op<T>>) -> Self {
+    pub fn new<T: Parses>(mut ir: Vec<Op<T>>) -> Self {
+        ir.push(Op::Matched);
         if ir.len() >= u16::MAX as usize {
             panic!("Too Many Ops");
         }
@@ -105,9 +106,8 @@ impl Ops {
         let mut index_map: Vec<usize> = Vec::new();
         let mut jump_map: Vec<(usize, usize)> = Vec::new();
         // let mut len: u16 = 0;
-        for (i, op) in ir.into_iter().enumerate() {
+        for (index, op) in ir.into_iter().enumerate() {
             // len += 1;
-            let index = i;
             let byte_index = ops.len();
             index_map.push(byte_index);
             ops.push(op.byte());
@@ -125,7 +125,7 @@ impl Ops {
                 }
                 Op::Peek(positive, len) => {
                     ops.push(positive as u8);
-                    jump_map.push((byte_index + 1, len));
+                    jump_map.push((byte_index + 1, index + len));
                     ops.extend([0, 0]);
                 }
                 Op::Branch(j1, j2) => {
@@ -155,7 +155,6 @@ impl Ops {
             ops[from_byte_index + 1] = upper;
             ops[from_byte_index + 2] = lower;
         }
-        ops.push(MATCHED);
         // let bytes_len = ops.len() as u16;
         Self {
             ops,
@@ -219,11 +218,11 @@ impl Ops {
         match self[index] {
             MATCHED => (MATCHED, format!("{}:Matched", index), 1),
             MATCH => {
-                let thing = self.get_match_args(index);
+                let slice = self.get_match_args(index);
                 (
                     MATCH,
-                    format!("{}:Match({:?})", index, thing),
-                    (thing.len() + 2) as u8,
+                    format!("{}:Match({:?})", index, slice),
+                    (slice.len() + 1) as u8,
                 )
             }
             MATCH_ANY => (MATCH_ANY, format!("{}:MatchAny", index), 1),
@@ -242,6 +241,11 @@ impl Ops {
             SCOPE => (SCOPE, format!("{}:Scope", index), 1),
             COMMIT_SCOPE => (COMMIT_SCOPE, format!("{}:CommitScope", index), 1),
             KILL_SCOPE => (KILL_SCOPE, format!("{}:KillScope", index), 1),
+            PEEK => {
+                let (positive, target) = self.get_peek_args(index);
+                (PEEK, format!("{}:Peek({}, {})", index, positive, target), 4)
+            }
+            COMMIT_PEEK => (COMMIT_PEEK, format!("{}:CommitPeek", index), 1),
             START_TOK => (START_TOK, format!("{}:StartTok", index), 1),
             END_TOK => (END_TOK, format!("{}:EndTok", index), 1),
             SAVE => (SAVE, format!("{}:Save", index), 1),
@@ -252,7 +256,7 @@ impl Ops {
                 (
                     END_LOOP,
                     format!("{}:EndLoop({}, {}, {})", index, start, min, max),
-                    9,
+                    11,
                 )
             }
             op => {

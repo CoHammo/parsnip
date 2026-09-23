@@ -41,8 +41,8 @@ impl<'a, T: Parses, I: Iterator<Item = T> + Clone> Snip<'a, T, I> {
     }
 }
 
-pub trait SnipsIter<T: Parses>: Iterator<Item = T> + Clone {}
-impl<T: Parses, I: Iterator<Item = T> + Clone> SnipsIter<T> for I {}
+// pub trait SnipsIter<T: Parses>: Iterator<Item = T> + Clone {}
+// impl<T: Parses, I: Iterator<Item = T> + Clone> SnipsIter<T> for I {}
 
 pub struct Snips<T: Parses, I: Iterator<Item = T> + Clone> {
     index: u32,

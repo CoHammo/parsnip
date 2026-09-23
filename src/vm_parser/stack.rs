@@ -120,7 +120,9 @@ impl Stack {
                 self.at_mut(id).prev = self.free;
                 self.free = id;
             } else {
-                self.at_mut(prev).refs += 1;
+                if prev != 0 {
+                    self.at_mut(prev).refs += 1;
+                }
             }
             Some((prev, var))
         } else {
