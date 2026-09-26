@@ -50,20 +50,20 @@ pub fn run<T: Parses>(values: Vec<impl ToOps<T>>) -> Vec<Op<T>> {
     ops
 }
 
-// pub fn till2<T: Parses>(value: impl Compiles<T>) -> Vec<Op<T>> {
-//     let mut ops = vec![Op::Scope(ScopeKind::Normal)];
-//     ops.push(Op::Branch(Jmp::Up(3), Jmp::Up(1)));
-//     ops.push(Op::MatchAny);
-//     ops.push(Op::Jump(Jmp::Back(2)));
-//     ops.extend(value.cops());
-//     ops.push(Op::CommitScope);
-//     ops
-// }
+pub fn slow_till<T: Parses>(value: impl ToOps<T>) -> Vec<Op<T>> {
+    let mut ops = vec![Op::Scope];
+    ops.push(Op::Branch(Jmp::Up(3), Jmp::Up(1)));
+    ops.push(Op::MatchAny);
+    ops.push(Op::Jump(Jmp::Back(2)));
+    ops.extend(value.ops());
+    ops.push(Op::CommitScope);
+    ops
+}
 
 pub fn till<T: Parses>(values: impl ToOps<T>) -> Vec<Op<T>> {
     let mut ops = vec![Op::Save];
     ops.extend(values.ops());
-    ops.push(Op::Unsave);
+    ops.push(Op::PopSave);
     ops
 }
 

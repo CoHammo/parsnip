@@ -7,7 +7,7 @@ pub struct Thread {
     pub scope: u16,
     pub peek: u16,
     pub stack: u16,
-    pub saves: u8,
+    pub saves: u16,
     pub event: u32,
     prev: u16,
     next: u16,

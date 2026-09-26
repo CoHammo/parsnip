@@ -97,11 +97,14 @@ impl PeekStack {
                     }
                 }
             } else {
+                if free {
+                    self[id].refs -= 1;
+                }
                 free = false;
             }
             id = parent;
         }
-        if id != 0 {
+        if id != 0 && !free {
             self[id].refs += 1;
         }
         id

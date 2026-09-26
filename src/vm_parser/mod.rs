@@ -88,7 +88,7 @@ impl Parser {
     ) -> Events {
         let mut snips = source.snips();
         while let Some(snip) = snips.next() {
-            self.take_snip::<T, I>(&snip);
+            self.take_snip(&snip);
         }
 
         if let Some(best) = self.best_match {
@@ -110,12 +110,10 @@ impl Parser {
         {
             let th = &mut self.threads[id];
             let peek = &mut self.peeks[th.peek];
-            if (th.scope != 0 && !self.scopes[th.scope].alive)
-                || (th.peek != 0 && peek.stat == PeekStat::Kill)
-            {
+            if !self.scopes[th.scope].alive || peek.stat == PeekStat::Kill {
                 self.kill_thread(id, true);
                 continue;
-            } else if th.peek != 0 && peek.stat == PeekStat::Remove {
+            } else if peek.stat == PeekStat::Remove {
                 if th.peek % 2 == 0 {
                     th.peek = self.peeks.pop_peek(th.peek);
                 } else {
@@ -160,8 +158,9 @@ impl Parser {
                                 self.kill_thread(id, true);
                             }
                         } else {
+                            let peek = self.threads[id].peek;
                             self.kill_thread(id, true);
-                            if self.threads[id].peek % 2 != 0 {
+                            if peek % 2 != 0 {
                                 self.threads.restart();
                             }
                         }
@@ -224,7 +223,7 @@ impl Parser {
                         );
                         thread.saves += 1;
                     }
-                    UNSAVE => {
+                    POP_SAVE => {
                         let thread = &mut self.threads[id];
                         if let Some((prev, Var::Save { .. })) = self.stack.pop_stack(thread.stack) {
                             thread.stack = prev;

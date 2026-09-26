@@ -10,7 +10,7 @@ pub const SCOPE: u8 = 5;
 pub const COMMIT_SCOPE: u8 = 6;
 pub const KILL_SCOPE: u8 = 7;
 pub const SAVE: u8 = 8;
-pub const UNSAVE: u8 = 9;
+pub const POP_SAVE: u8 = 9;
 pub const START_LOOP: u8 = 10;
 pub const END_LOOP: u8 = 11;
 pub const START_TOK: u8 = 12;
@@ -60,7 +60,7 @@ pub enum Op<T: Parses> {
     StartTok,
     EndTok,
     Save,
-    Unsave,
+    PopSave,
     StartLoop,
     EndLoop(usize, u32, u32),
 }
@@ -130,7 +130,7 @@ impl<T: Parses> Op<T> {
             Op::StartTok => START_TOK,
             Op::EndTok => END_TOK,
             Op::Save => SAVE,
-            Op::Unsave => UNSAVE,
+            Op::PopSave => POP_SAVE,
             Op::StartLoop => START_LOOP,
             Op::EndLoop(_, _, _) => END_LOOP,
         }
@@ -307,7 +307,7 @@ impl Ops {
             START_TOK => (START_TOK, format!("{}:StartTok", index), 1),
             END_TOK => (END_TOK, format!("{}:EndTok", index), 1),
             SAVE => (SAVE, format!("{}:Save", index), 1),
-            UNSAVE => (UNSAVE, format!("{}:Unsave", index), 1),
+            POP_SAVE => (POP_SAVE, format!("{}:Unsave", index), 1),
             START_LOOP => (START_LOOP, format!("{}:StartLoop", index), 1),
             END_LOOP => {
                 let args = self.get_loop_args(index);
